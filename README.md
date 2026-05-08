@@ -111,9 +111,9 @@ Example:
 ## Clone Repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/telegram-jellyfin-bot.git
+git clone https://github.com/mdsherinoff/telegram-jellyfin-bot.git /opt/telegram-jellyfin-bot
 
-cd telegram-jellyfin-bot
+cd /opt/telegram-jellyfin-bot
 ```
 
 ---
@@ -121,6 +121,8 @@ cd telegram-jellyfin-bot
 ## Create Python Virtual Environment
 
 ```bash
+cd /opt/telegram-jellyfin-bot
+
 python3 -m venv venv
 
 source venv/bin/activate
@@ -139,6 +141,10 @@ pip install -r requirements.txt
 # Configuration
 
 Create `.env`
+
+```
+nano .env
+```
 
 ```env
 BOT_TOKEN=YOUR_BOT_TOKEN
