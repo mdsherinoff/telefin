@@ -111,9 +111,9 @@ Example:
 ## Clone Repository
 
 ```bash
-git clone https://github.com/mdsherinoff/telegram-jellyfin-bot.git
+git clone https://github.com/mdsherinoff/telegram-jellyfin-bot.git /opt/telegram-jellyfin-bot
 
-cd telegram-jellyfin-bot
+cd /opt/telegram-jellyfin-bot
 ```
 
 ---
