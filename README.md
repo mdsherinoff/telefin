@@ -121,6 +121,8 @@ cd /opt/telegram-jellyfin-bot
 ## Create Python Virtual Environment
 
 ```bash
+cd /opt/telegram-jellyfin-bot
+
 python3 -m venv venv
 
 source venv/bin/activate
@@ -139,6 +141,10 @@ pip install -r requirements.txt
 # Configuration
 
 Create `.env`
+
+```
+nano .env
+```
 
 ```env
 BOT_TOKEN=YOUR_BOT_TOKEN
