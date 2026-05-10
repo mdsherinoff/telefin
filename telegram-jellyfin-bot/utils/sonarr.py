@@ -39,16 +39,12 @@ def trigger_sonarr_scan(path: str) -> bool:
 
         response.raise_for_status()
 
-        logger.info(
-            f"Sonarr scan triggered successfully for: {path}"
-        )
+        logger.info(f"Sonarr scan triggered successfully for: {path}")
 
         return True
 
     except requests.RequestException as e:
 
-        logger.error(
-            f"Failed to trigger Sonarr scan: {e}"
-        )
+        logger.error(f"Failed to trigger Sonarr scan: {e}")
 
         return False

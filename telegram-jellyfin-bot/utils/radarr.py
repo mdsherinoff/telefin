@@ -39,16 +39,12 @@ def trigger_radarr_scan(path: str) -> bool:
 
         response.raise_for_status()
 
-        logger.info(
-            f"Radarr scan triggered successfully for: {path}"
-        )
+        logger.info(f"Radarr scan triggered successfully for: {path}")
 
         return True
 
     except requests.RequestException as e:
 
-        logger.error(
-            f"Failed to trigger Radarr scan: {e}"
-        )
+        logger.error(f"Failed to trigger Radarr scan: {e}")
 
         return False

@@ -49,7 +49,7 @@ ALLOWED_EXTENSIONS = {
 client = TelegramClient("userbot_session", API_ID, API_HASH)
 
 # --------------------------------------------------
-# Handler — fires on every new message you receive
+# Handler
 # --------------------------------------------------
 
 @client.on(events.NewMessage)
@@ -60,15 +60,16 @@ async def handle_media(event):
     if not sender:
         return
 
-    # Only process messages from allowed users
     if not is_allowed_user(sender.id, ALLOWED_USERS):
         return
 
-    # Must have a file attached
     if not event.message.media:
         return
 
-    # Get the filename from the media attributes
+    # --------------------------------------------------
+    # Get filename from media attributes
+    # --------------------------------------------------
+
     filename = None
 
     if hasattr(event.message.media, "document"):
@@ -92,16 +93,18 @@ async def handle_media(event):
         return
 
     # --------------------------------------------------
-    # Start download
+    # Download
     # --------------------------------------------------
 
-    status = await event.reply(f"⬇ Downloading `{filename}`...", parse_mode="md")
+    status = await event.reply(
+        f"Downloading `{filename}`...",
+        parse_mode="md"
+    )
 
     try:
 
         destination_path = os.path.join(DOWNLOAD_DIR, filename)
 
-        # This downloads directly on your server — no size limit
         await client.download_media(
             event.message,
             file=destination_path,
@@ -139,7 +142,6 @@ async def handle_media(event):
     except Exception as e:
         logger.error(f"Download failed: {e}")
         await status.edit(f"Download failed\n\n`{str(e)}`", parse_mode="md")
-
 
 # --------------------------------------------------
 # Main
