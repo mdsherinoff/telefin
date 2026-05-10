@@ -1,4 +1,4 @@
-# TeleFin
+# TeleFin (🔴Under Construction)
 ## Telegram → Sonarr/Radarr → Jellyfin
 
 A Telegram bot that accepts media uploads and automatically imports them into your Jellyfin media stack.
