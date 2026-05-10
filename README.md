@@ -102,7 +102,7 @@ Save your numeric user ID. Example:
 ## Clone Repository
 
 ```bash
-git clone https://github.com/mdsherinoff/telegram-jellyfin-bot.git /opt/telegram-jellyfin-bot
+git clone https://github.com/mdsherinoff/telefin.git /opt/telegram-jellyfin-bot
 cd /opt/telegram-jellyfin-bot
 ```
 
