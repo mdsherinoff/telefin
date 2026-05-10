@@ -338,24 +338,6 @@ All other users are ignored.
 
 ---
 
-# Suggested Repository Structure
-
-```text
-telegram-jellyfin-bot/
-├── bot.py
-├── requirements.txt
-├── README.md
-├── .env.example
-├── services/
-│   └── telegram-media-bot.service
-└── utils/
-    ├── radarr.py
-    ├── sonarr.py
-    └── telegram_helpers.py
-```
-
----
-
 # Future Ideas
 
 ## Planned Features
@@ -371,27 +353,6 @@ telegram-jellyfin-bot/
 - Admin commands
 - File size limits
 - Request queue system
-
----
-
-# requirements.txt
-
-```text
-python-telegram-bot
-python-dotenv
-requests
-```
-
----
-
-# Example `.gitignore`
-
-```gitignore
-venv/
-.env
-__pycache__/
-*.pyc
-```
 
 ---
 
