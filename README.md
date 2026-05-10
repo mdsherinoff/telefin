@@ -1,4 +1,4 @@
-# TeleFin
+# TeleFin (🔴Under Construction)
 ## Telegram → Sonarr/Radarr → Jellyfin
 
 A Telegram **userbot** that watches for forwarded media files and automatically imports them into your Jellyfin media stack. Uses the full Telegram client API (MTProto via Telethon), so there is **no file size limit** — works with files up to 4 GB.
@@ -292,52 +292,32 @@ Everything else is treated as a movie.
 # Supported File Types
 
 ```text
-.mkv  .mp4  .avi  .mov  .wmv  .flv  .webm  .m4v
+/srv/media/incoming
 ```
+
+4. Bot notifies Sonarr/Radarr
+5. Sonarr/Radarr:
+   - Renames files
+   - Organizes folders
+   - Moves media
+6. Jellyfin automatically detects new media
 
 ---
 
-# Project Structure
+# Suggested Repository Structure
 
 ```text
 telegram-jellyfin-bot/
 ├── bot.py
 ├── requirements.txt
 ├── README.md
-├── .env
-├── userbot_session.session   ← created on first login, do not delete
+├── .env.example
+├── services/
+│   └── telegram-media-bot.service
 └── utils/
     ├── radarr.py
     ├── sonarr.py
     └── telegram_helpers.py
-```
-
----
-
-# Security
-
-## Allowed Users Only
-
-Only Telegram user IDs listed in `ALLOWED_USERS` in your `.env` will trigger downloads. All other users are silently ignored.
-
-## Recommendations
-
-- Do NOT expose Sonarr/Radarr publicly
-- Run behind a reverse proxy if remote access is needed
-- Use firewall rules to limit access
-- Keep `.env` and `userbot_session.session` private
-- Never commit `.env` or the session file to version control
-
----
-
-# Example .gitignore
-
-```gitignore
-venv/
-.env
-*.session
-__pycache__/
-*.pyc
 ```
 
 ---
