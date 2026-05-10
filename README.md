@@ -53,11 +53,11 @@ Jellyfin auto detects
 telegram-jellyfin-bot/
 ├── bot.py
 ├── requirements.txt
-├── .env                        ← you create this (never commit it)
+├── .env                        ← you create this
 ├── .env.example                ← template
 ├── .gitignore
 ├── README.md
-├── userbot_session.session     ← created on first login (never commit it)
+├── userbot_session.session     ← created on first login
 ├── services/
 │   └── telegram-media-bot.service
 └── utils/
