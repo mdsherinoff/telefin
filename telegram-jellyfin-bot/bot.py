@@ -52,7 +52,7 @@ client = TelegramClient("userbot_session", API_ID, API_HASH)
 # Handler
 # --------------------------------------------------
 
-@client.on(events.NewMessage)
+@client.on(events.NewMessage(chats='me'))
 async def handle_media(event):
 
     sender = await event.get_sender()
