@@ -1,17 +1,14 @@
 # TeleFin
 ## Telegram → Sonarr/Radarr → Jellyfin
 
-A Telegram **userbot** that watches for forwarded media files and automatically imports them into your Jellyfin media stack. Uses the full Telegram client API (MTProto via Telethon), so there is **no file size limit** — works with files up to 4 GB.
+A Telegram **userbot** that watches for forwarded media files and automatically imports them into your Jellyfin media stack. Uses the full Telegram client API (MTProto via Telethon), so there is **no file size limit**, works with files up to 4 GB.
 
 ---
 
 ## Why a Userbot and Not a Bot?
 
-Standard Telegram bots are limited to **20 MB** per file transfer. Since movie and TV show files are routinely 1–20+ GB, a regular bot cannot download them.
-
-This project uses a **userbot** — a script that logs into your personal Telegram account using the official MTProto API. This gives it the same file access as the regular Telegram app, with a 4 GB limit per file.
-
-> **Note:** The userbot runs as your personal Telegram account. For personal self-hosted use this is standard practice in the homelab community. Never use it for automation at scale.
+Standard Telegram bots are limited to **20 MB** per file transfer. Since movie and TV show files are much above that size, a regular bot cannot download them.
+So, this project uses a **userbot**; a script that logs into your personal Telegram account using the official MTProto API. This gives it the same file access as the regular Telegram app, with a 4 GB limit per file.
 
 ---
 
@@ -25,7 +22,7 @@ This project uses a **userbot** — a script that logs into your personal Telegr
   - Radarr for movies
 - Jellyfin picks up new files automatically
 - Runs as a `systemd` service
-- Tested on Proxmox LXC, Ubuntu Server, Debian
+- Tested on Proxmox Ubuntu LXC
 
 ---
 
@@ -43,27 +40,6 @@ Sonarr (TV) / Radarr (Movies)
 /srv/media/tv or /srv/media/movies
    ↓
 Jellyfin auto detects
-```
-
----
-
-## Project Structure
-
-```text
-telegram-jellyfin-bot/
-├── bot.py
-├── requirements.txt
-├── .env                        ← you create this
-├── .env.example                ← template
-├── .gitignore
-├── README.md
-├── userbot_session.session     ← created on first login
-├── services/
-│   └── telegram-media-bot.service
-└── utils/
-    ├── radarr.py
-    ├── sonarr.py
-    └── telegram_helpers.py
 ```
 
 ---
@@ -94,7 +70,7 @@ telegram-jellyfin-bot/
 1. Go to **https://my.telegram.org**
 2. Log in with your phone number
 3. Click **"API development tools"**
-4. Fill in the form — app name and platform can be anything
+4. Fill in the form; app name and platform can be anything
 5. Save your `api_id` (a number) and `api_hash` (a long string)
 
 ---
@@ -118,8 +94,6 @@ cd /opt/telegram-jellyfin-bot
 
 ## Step 4 — Install Python venv
 
-On Debian/Ubuntu this package is required and not installed by default:
-
 ```bash
 apt install python3.12-venv -y
 ```
@@ -140,7 +114,6 @@ pip install -r requirements.txt
 ## Step 6 — Create .env
 
 ```bash
-cp .env.example .env
 nano .env
 ```
 
@@ -189,7 +162,7 @@ Please enter the code you received: 12345
 Signed in successfully as Your Name
 ```
 
-After login, a `userbot_session.session` file is created in the project folder. This stores your authentication — **do not delete it** or you will need to log in again.
+After login, a `userbot_session.session` file is created in the project folder. This stores your authentication, **do not delete it** or you will need to log in again.
 
 Once signed in, stop the process with `Ctrl+C` and move on to the next step.
 
@@ -278,13 +251,13 @@ Enable:
 4. You receive a reply in Saved Messages:
 
 ```
-✅ Download complete
+Download complete
 
-🎬 Type: Movie
-📁 File: The.Movie.2024.mkv
-📂 Path: /srv/media/incoming/The.Movie.2024.mkv
+Type: Movie
+File: The.Movie.2024.mkv
+Path: /srv/media/incoming/The.Movie.2024.mkv
 
-✅ Radarr notified
+Radarr notified
 ```
 
 5. Sonarr or Radarr renames and moves the file, Jellyfin picks it up automatically
@@ -308,15 +281,6 @@ The.Movie.2024.mkv      ← treated as movie
 ```text
 .mkv  .mp4  .avi  .mov  .wmv  .flv  .webm  .m4v
 ```
-
----
-
-## Security
-
-- Only Telegram user IDs listed in `ALLOWED_USERS` can trigger downloads
-- All other users are silently ignored
-- Do not expose Sonarr or Radarr publicly
-- Never commit `.env` or `*.session` to version control — both are in `.gitignore`
 
 ---
 
