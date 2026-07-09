@@ -405,6 +405,48 @@ The.Movie.2024.mkv      ← treated as movie
 
 ---
 
+## Updating
+
+Updates never touch your data: the `.env`, the Telegram session file, and the
+SQLite database are all gitignored (and on the `./config` volume in Docker),
+so they survive every update. The database schema is unchanged between
+versions — no migration steps needed.
+
+### Docker
+
+```bash
+cd /opt/telefin          # wherever you cloned the repo
+git pull
+docker compose up -d --build
+```
+
+### systemd (bare metal)
+
+```bash
+cd /opt/telefin          # wherever you cloned the repo
+git pull
+telefin/venv/bin/pip install -r telefin/requirements.txt
+systemctl restart telefin
+```
+
+Then check it came back up:
+
+```bash
+systemctl status telefin
+journalctl -u telefin -n 30
+```
+
+Notes:
+
+- Your existing `/etc/systemd/system/telefin.service` keeps working — updates
+  don't require service file changes. (Only replace it if your paths changed.)
+- If `git pull` complains about local changes you made on the server, stash
+  them first with `git stash`, pull, then `git stash pop`.
+- Hard-refresh the dashboard afterwards (**Ctrl+Shift+R** / **Cmd+Shift+R**)
+  so your browser drops the cached old CSS/JS.
+
+---
+
 ## Troubleshooting
 
 **The bot ignores my forwarded files.**
