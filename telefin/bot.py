@@ -1,136 +1,123 @@
-import os
 import logging
 from pathlib import Path
-from dotenv import load_dotenv
 from telethon import TelegramClient, events
 
-from utils.sonarr import trigger_sonarr_scan
-from utils.radarr import trigger_radarr_scan
+import db
+from config import Config
+from db import Database
+from worker import DownloadQueue, Job
 from utils.telegram_helpers import (
-    load_allowed_users,
+    detect_media_type,
     is_allowed_user,
-    is_tv_show,
-    setup_logging,
-    ensure_directory,
+    safe_destination,
 )
 
-
-# Load environment variables
-load_dotenv()
-
-API_ID = int(os.getenv("TELEGRAM_API_ID"))
-API_HASH = os.getenv("TELEGRAM_API_HASH")
-DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "/srv/media/incoming")
-
-# Setup
-setup_logging()
 logger = logging.getLogger(__name__)
-ensure_directory(DOWNLOAD_DIR)
-ALLOWED_USERS = load_allowed_users()
-
-# Allowed extensions
-ALLOWED_EXTENSIONS = {
-    ".mkv", ".mp4", ".avi", ".mov",
-    ".wmv", ".flv", ".webm", ".m4v",
-}
-
-# Telethon client
-client = TelegramClient("userbot_session", API_ID, API_HASH)
 
 
-# Handler
-@client.on(events.NewMessage(chats='me'))
-async def handle_media(event):
+def build_client(config: Config) -> TelegramClient:
+    # Create Telethon userbot client from configuration
+    return TelegramClient(config.session_name, config.api_id, config.api_hash)
 
-    sender = await event.get_sender()
 
-    if not sender:
-        return
+def _extract_filename(message) -> str | None:
+    # Pull original filename out of media document
+    media = message.media
 
-    if not is_allowed_user(sender.id, ALLOWED_USERS):
-        return
+    if not media or not hasattr(media, "document"):
+        return None
 
-    if not event.message.media:
-        return
+    for attr in media.document.attributes:
+        if hasattr(attr, "file_name") and attr.file_name:
+            return attr.file_name
 
-    # Get filename from media attributes
-    filename = None
+    return None
 
-    if hasattr(event.message.media, "document"):
-        for attr in event.message.media.document.attributes:
-            if hasattr(attr, "file_name"):
-                filename = attr.file_name
-                break
 
-    if not filename:
-        logger.info("No filename found, skipping")
-        return
+def register_handlers(
+    client: TelegramClient,
+    config: Config,
+    database: Database,
+    queue: DownloadQueue,
+) -> None:
 
-    extension = Path(filename).suffix.lower()
+    @client.on(events.NewMessage(chats=config.watch_chat))
+    async def handle_media(event) -> None:
+        sender = await event.get_sender()
 
-    if extension not in ALLOWED_EXTENSIONS:
-        await event.reply(
-            f"Unsupported file type: `{extension}`\n\n"
-            f"Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
-            parse_mode="md"
+        if not sender or not is_allowed_user(sender.id, config.allowed_users):
+            return
+
+        if not event.message.media:
+            return
+
+        filename = _extract_filename(event.message)
+
+        if not filename:
+            logger.info("No filename found, skipping")
+            return
+
+        extension = Path(filename).suffix.lower()
+
+        if extension not in config.allowed_extensions:
+            await event.reply(
+                f"Unsupported file type: `{extension}`\n\n"
+                f"Allowed: {', '.join(sorted(config.allowed_extensions))}",
+                parse_mode="md",
+            )
+            return
+
+        safe_name, dest_path = safe_destination(config.download_dir, filename)
+        size = _document_size(event.message)
+
+        # Skip duplicates
+        duplicate = await database.find_completed_duplicate(safe_name, size)
+
+        if duplicate:
+            await database.create_download(
+                filename=filename,
+                safe_filename=safe_name,
+                media_type=detect_media_type(filename),
+                dest_path=dest_path,
+                sender_id=sender.id,
+                chat_id=event.chat_id,
+                message_id=event.message.id,
+                status=db.STATUS_SKIPPED,
+                size=size,
+            )
+            await event.reply(
+                f"↩`{filename}` was already downloaded, skipping.",
+                parse_mode="md",
+            )
+            return
+
+        media_type = detect_media_type(filename)
+
+        record = await database.create_download(
+            filename=filename,
+            safe_filename=safe_name,
+            media_type=media_type,
+            dest_path=dest_path,
+            sender_id=sender.id,
+            chat_id=event.chat_id,
+            message_id=event.message.id,
+            size=size,
         )
-        return
 
-    # Download
-    status = await event.reply(
-        f"Downloading `{filename}`...",
-        parse_mode="md"
-    )
-
-    try:
-
-        destination_path = os.path.join(DOWNLOAD_DIR, filename)
-
-        await client.download_media(
-            event.message,
-            file=destination_path,
+        status = await event.reply(
+            f"Queued `{filename}`",
+            parse_mode="md",
         )
 
-        # Trigger Sonarr or Radarr
-        sonarr_ok = False
-        radarr_ok = False
+        await queue.enqueue(Job(record["id"], status))
 
-        if is_tv_show(filename):
-            media_type = "TV Show"
-            sonarr_ok = trigger_sonarr_scan(destination_path)
-        else:
-            media_type = "Movie"
-            radarr_ok = trigger_radarr_scan(destination_path)
-
-        scan_result = (
-            "Sonarr notified" if sonarr_ok
-            else "Radarr notified" if radarr_ok
-            else "Scan trigger failed"
-        )
-
-        await status.edit(
-            f"Download complete\n\n"
-            f"Type: {media_type}\n"
-            f"File: `{filename}`\n"
-            f"Path: `{destination_path}`\n\n"
-            f"{scan_result}",
-            parse_mode="md"
-        )
-
-    except Exception as e:
-        logger.error(f"Download failed: {e}")
-        await status.edit(f"Download failed\n\n`{str(e)}`", parse_mode="md")
-
-# Main
-def main():
-    if not API_ID or not API_HASH:
-        raise ValueError("TELEGRAM_API_ID or TELEGRAM_API_HASH missing from .env")
-
-    print("Userbot starting...")
-
-    with client:
-        client.run_until_disconnected()
+    logger.info("Handlers registered on chat: %s", config.watch_chat)
 
 
-if __name__ == "__main__":
-    main()
+def _document_size(message) -> int:
+    media = message.media
+
+    if media and hasattr(media, "document") and media.document:
+        return getattr(media.document, "size", 0) or 0
+
+    return 0

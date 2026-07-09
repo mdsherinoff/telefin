@@ -80,8 +80,10 @@ def format_size(size_bytes: int) -> str:
     return f"{size:.2f} {size_names[i]}"
 
 
-def setup_logging(level: str = "INFO") -> None:
-    # Configure application logging.
+def setup_logging(level: str | None = None) -> None:
+    if level is None:
+        level = os.getenv("LOG_LEVEL", "INFO")
+
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
         format=(
@@ -108,3 +110,24 @@ def is_tv_show(filename: str) -> bool:
             return True
 
     return False
+
+def detect_media_type(filename: str) -> str:
+    return "tv" if is_tv_show(filename) else "movie"
+
+def safe_destination(download_dir: str, filename: str) -> tuple[str, str]:
+    base = os.path.basename(filename)
+    safe_name = sanitize_filename(base)
+    dest_path = os.path.join(download_dir, safe_name)
+
+    return safe_name, dest_path
+
+# Render a text progress bar
+def make_progress_bar(fraction: float, width: int = 16) -> str:
+    fraction = max(0.0, min(1.0, fraction))
+    filled = int(round(fraction * width))
+
+    return "[" + "█" * filled + "░" * (width - filled) + "]"
+
+# show transfer speed
+def format_speed(bytes_per_second: float) -> str:
+    return f"{format_size(int(bytes_per_second))}/s"

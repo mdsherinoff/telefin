@@ -1,11 +1,11 @@
 venv/
-.env
-*.session
 __pycache__/
 *.pyc
+*.session
+*.session-journal
+.env
 *.db
 *.db-wal
 *.db-shm
-config/
+.git
 .DS_Store
-.claude/

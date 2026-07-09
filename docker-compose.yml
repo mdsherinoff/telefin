@@ -1,0 +1,33 @@
+name: telefin
+
+services:
+  telefin:
+    build: ./telefin
+    image: telefin:latest
+    container_name: telefin
+    restart: unless-stopped
+
+    env_file:
+      - ./telefin/.env
+
+    environment:
+      SESSION_NAME: /config/userbot_session
+      DB_PATH: /config/telefin.db
+
+    ports:
+      - "8420:8420"
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,urllib.request; urllib.request.urlopen(f\"http://127.0.0.1:{os.getenv('WEB_PORT','8420')}/api/health\", timeout=5)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    volumes:
+      - ./config:/config
+
+      - /srv/media:/srv/media
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

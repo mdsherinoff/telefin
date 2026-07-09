@@ -1,12 +1,12 @@
 import os
 import logging
-import requests
+import httpx
 
 logger = logging.getLogger(__name__)
 
 
-def trigger_sonarr_scan(path: str) -> bool:
-    # Trigger Sonarr DownloadedEpisodesScan
+async def trigger_sonarr_scan(path: str) -> bool:
+    # Trigger Sonarr DownloadedEpisodesScan for a freshly downloaded file.
     sonarr_url = os.getenv("SONARR_URL")
     sonarr_api_key = os.getenv("SONARR_API_KEY")
 
@@ -14,34 +14,19 @@ def trigger_sonarr_scan(path: str) -> bool:
         logger.error("Sonarr environment variables missing")
         return False
 
-    url = f"{sonarr_url}/api/v3/command"
+    url = f"{sonarr_url.rstrip('/')}/api/v3/command"
 
-    headers = {
-        "X-Api-Key": sonarr_api_key
-    }
-
-    payload = {
-        "name": "DownloadedEpisodesScan",
-        "path": path
-    }
+    headers = {"X-Api-Key": sonarr_api_key}
+    payload = {"name": "DownloadedEpisodesScan", "path": path}
 
     try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
 
-        response = requests.post(
-            url,
-            json=payload,
-            headers=headers,
-            timeout=30
-        )
-
-        response.raise_for_status()
-
-        logger.info(f"Sonarr scan triggered successfully for: {path}")
-
+        logger.info("Sonarr scan triggered successfully for: %s", path)
         return True
 
-    except requests.RequestException as e:
-
-        logger.error(f"Failed to trigger Sonarr scan: {e}")
-
+    except httpx.HTTPError as e:
+        logger.error("Failed to trigger Sonarr scan: %s", e)
         return False

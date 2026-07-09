@@ -1,12 +1,13 @@
 [Unit]
-Description=Telegram Userbot Media Bot
-After=network.target
+Description=TeleFin - Telegram to Sonarr/Radarr/Jellyfin bridge
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=YOUR_USER
-WorkingDirectory=/opt/telefin
-ExecStart=/opt/telefin/venv/bin/python bot.py
+User=root
+WorkingDirectory=/opt/telefin/telefin
+ExecStart=/opt/telefin/telefin/venv/bin/python main.py
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
