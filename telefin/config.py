@@ -1,4 +1,5 @@
 import os
+import re
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
 
@@ -46,6 +47,28 @@ def _parse_extensions(raw: str) -> set[str]:
 
     return extensions or set(DEFAULT_EXTENSIONS)
 
+def _parse_chats(raw: str) -> list:
+    # WATCH_CHAT may name one or more sources, comma separated:
+    #   "me"                    -> your own Saved Messages
+    #   "-1001234567890"        -> a (super)group / channel, by numeric ID
+    #   "@somegroup"            -> a public username
+    #   "me,-1001234567890"     -> watch both at once
+    # Numeric entries must become ints, otherwise Telethon treats them as
+    # usernames and fails to resolve the group.
+    chats: list = []
+
+    for item in raw.split(","):
+        item = item.strip()
+
+        if not item:
+            continue
+
+        if re.fullmatch(r"-?\d+", item):
+            chats.append(int(item))
+        else:
+            chats.append(item)
+
+    return chats or ["me"]
 
 @dataclass
 class Config:
@@ -53,7 +76,7 @@ class Config:
     api_id: int
     api_hash: str
     session_name: str
-    watch_chat: str
+    watch_chats: list
     allowed_users: list[int]
 
     # Storage
@@ -86,7 +109,7 @@ class Config:
             api_id=_get_int("TELEGRAM_API_ID", 0),
             api_hash=os.getenv("TELEGRAM_API_HASH", ""),
             session_name=os.getenv("SESSION_NAME", "userbot_session"),
-            watch_chat=os.getenv("WATCH_CHAT", "me"),
+            watch_chats=_parse_chats(os.getenv("WATCH_CHAT", "me")),
             allowed_users=_parse_users(os.getenv("ALLOWED_USERS", "")),
             download_dir=os.getenv("DOWNLOAD_DIR", "/srv/media/incoming"),
             db_path=os.getenv("DB_PATH", "telefin.db"),

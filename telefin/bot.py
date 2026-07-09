@@ -41,7 +41,7 @@ def register_handlers(
     queue: DownloadQueue,
 ) -> None:
 
-    @client.on(events.NewMessage(chats=config.watch_chat))
+    @client.on(events.NewMessage(chats=config.watch_chats))
     async def handle_media(event) -> None:
         sender = await event.get_sender()
 
@@ -111,8 +111,7 @@ def register_handlers(
 
         await queue.enqueue(Job(record["id"], status))
 
-    logger.info("Handlers registered on chat: %s", config.watch_chat)
-
+    logger.info("Handlers registered on chat(s): %s", config.watch_chats)
 
 def _document_size(message) -> int:
     media = message.media
