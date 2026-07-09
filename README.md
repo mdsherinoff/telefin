@@ -447,6 +447,42 @@ Notes:
 
 ---
 
+## Uninstalling
+
+Uninstalling never touches your media: everything in `/srv/media` (or whatever
+`DOWNLOAD_DIR` and your Sonarr/Radarr/Jellyfin libraries point at) stays where
+it is.
+
+### Docker
+
+```bash
+cd /opt/telefin          # wherever you cloned the repo
+docker compose down --rmi local
+cd / && rm -rf /opt/telefin
+```
+
+This stops and removes the container and image. Deleting the repo folder also
+deletes `./config` (the Telegram session file and download history database).
+
+### systemd (bare metal)
+
+```bash
+systemctl disable --now telefin
+rm /etc/systemd/system/telefin.service
+systemctl daemon-reload
+rm -rf /opt/telefin      # code, venv, session file, database
+```
+
+### Finally: log the userbot out of Telegram
+
+Deleting the session file removes it from your server, but Telegram still
+lists the login until you revoke it. In your Telegram app go to
+**Settings → Devices** (or **Privacy and Security → Active Sessions**), find
+the session created for TeleFin, and terminate it. Done — your account is
+exactly as it was before.
+
+---
+
 ## Troubleshooting
 
 **The bot ignores my forwarded files.**
