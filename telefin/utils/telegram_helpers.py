@@ -119,7 +119,22 @@ def safe_destination(download_dir: str, filename: str) -> tuple[str, str]:
     safe_name = sanitize_filename(base)
     dest_path = os.path.join(download_dir, safe_name)
 
-    return safe_name, dest_path
+    if not os.path.exists(dest_path):
+        return safe_name, dest_path
+
+    # Another (differently-sized) file already sits at this path -- true
+    # duplicates are caught earlier via find_completed_duplicate, so this
+    # collision is a distinct file that happens to sanitize to the same
+    # name. Suffix it rather than risk clobbering the existing one.
+    stem, ext = os.path.splitext(safe_name)
+    counter = 1
+
+    while os.path.exists(dest_path):
+        candidate = f"{stem} ({counter}){ext}"
+        dest_path = os.path.join(download_dir, candidate)
+        counter += 1
+
+    return os.path.basename(dest_path), dest_path
 
 # Render a text progress bar
 def make_progress_bar(fraction: float, width: int = 16) -> str:

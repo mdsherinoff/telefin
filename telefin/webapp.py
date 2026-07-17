@@ -59,23 +59,23 @@ def create_app(
     def ws_authorized(websocket: WebSocket) -> bool:
         # Browsers reuse the page's HTTP Basic credentials on the WebSocket
         # handshake, so checking the Authorization header keeps the dashboard
-        # JS free of any token plumbing.
+        # JS free of any token plumbing. No query-param fallback: a password
+        # in the URL ends up in browser history, proxy logs, and referrers.
         header = websocket.headers.get("authorization", "")
 
-        if header.lower().startswith("basic "):
-            try:
-                decoded = base64.b64decode(header[6:]).decode()
-            except Exception:
-                return False
-            username, _, password = decoded.partition(":")
-            return (
-                secrets.compare_digest(username, config.web_username)
-                and secrets.compare_digest(password, config.web_password)
-            )
+        if not header.lower().startswith("basic "):
+            return False
 
-        # Fallback for non-browser clients: /ws?token=<WEB_PASSWORD>.
-        token = websocket.query_params.get("token", "")
-        return secrets.compare_digest(token, config.web_password)
+        try:
+            decoded = base64.b64decode(header[6:]).decode()
+        except Exception:
+            return False
+
+        username, _, password = decoded.partition(":")
+        return (
+            secrets.compare_digest(username, config.web_username)
+            and secrets.compare_digest(password, config.web_password)
+        )
 
     # pages
     @app.get("/")

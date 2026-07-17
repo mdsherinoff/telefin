@@ -1,15 +1,11 @@
-import os
 import logging
 import httpx
 
 logger = logging.getLogger(__name__)
 
 
-async def trigger_sonarr_scan(path: str) -> bool:
+async def trigger_sonarr_scan(path: str, sonarr_url: str | None, sonarr_api_key: str | None) -> bool:
     # Trigger Sonarr DownloadedEpisodesScan for a freshly downloaded file.
-    sonarr_url = os.getenv("SONARR_URL")
-    sonarr_api_key = os.getenv("SONARR_API_KEY")
-
     if not sonarr_url or not sonarr_api_key:
         logger.error("Sonarr environment variables missing")
         return False

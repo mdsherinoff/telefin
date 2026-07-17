@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: telefin
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        working-directory: telefin
+        run: python -m pytest -q
+
+      - name: Compile check
+        working-directory: telefin
+        run: python -m py_compile *.py utils/*.py

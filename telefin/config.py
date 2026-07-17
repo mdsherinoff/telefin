@@ -87,6 +87,8 @@ class Config:
     allowed_extensions: set[str]
     max_concurrent_downloads: int
     progress_interval: int
+    max_download_retries: int
+    retry_backoff_seconds: int
 
     # Sonarr / Radarr
     sonarr_url: str | None
@@ -120,6 +122,8 @@ class Config:
             ),
             max_concurrent_downloads=_get_int("MAX_CONCURRENT_DOWNLOADS", 1),
             progress_interval=_get_int("PROGRESS_INTERVAL", 5),
+            max_download_retries=_get_int("MAX_DOWNLOAD_RETRIES", 3),
+            retry_backoff_seconds=_get_int("RETRY_BACKOFF_SECONDS", 10),
             sonarr_url=os.getenv("SONARR_URL"),
             sonarr_api_key=os.getenv("SONARR_API_KEY"),
             radarr_url=os.getenv("RADARR_URL"),

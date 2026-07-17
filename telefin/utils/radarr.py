@@ -1,15 +1,11 @@
-import os
 import logging
 import httpx
 
 logger = logging.getLogger(__name__)
 
 
-async def trigger_radarr_scan(path: str) -> bool:
+async def trigger_radarr_scan(path: str, radarr_url: str | None, radarr_api_key: str | None) -> bool:
     # Trigger Radarr DownloadedMoviesScan for a freshly downloaded file.
-    radarr_url = os.getenv("RADARR_URL")
-    radarr_api_key = os.getenv("RADARR_API_KEY")
-
     if not radarr_url or not radarr_api_key:
         logger.error("Radarr environment variables missing")
         return False

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import shutil
 import time
 from dataclasses import dataclass
 
@@ -25,6 +26,7 @@ class Job:
     # Telegram status message to keep editing (None for web-triggered retries).
     download_id: int
     status_message: object | None = None
+    attempt: int = 0
 
 
 class DownloadQueue:
@@ -76,9 +78,39 @@ class DownloadQueue:
                 raise
             except Exception as e:
                 logger.exception("Worker %d crashed on job %s", index, job)
-                await self._fail(job, str(e))
+
+                if job.attempt < self.config.max_download_retries:
+                    await self._retry_after_backoff(job, e)
+                else:
+                    await self._fail(job, str(e))
             finally:
                 self._queue.task_done()
+
+    async def _retry_after_backoff(self, job: Job, error: Exception) -> None:
+        delay = self.config.retry_backoff_seconds * (2 ** job.attempt)
+        next_job = Job(job.download_id, job.status_message, job.attempt + 1)
+
+        logger.info(
+            "Retrying job %s in %ds (attempt %d/%d) after: %s",
+            job.download_id, delay, next_job.attempt,
+            self.config.max_download_retries, error,
+        )
+
+        await self.db.update_download(
+            job.download_id,
+            status=db.STATUS_QUEUED,
+            error=f"Retrying after error: {error}",
+        )
+        await self._publish(job.download_id, "queued")
+        await self._edit(
+            job.status_message,
+            f"Download failed, retrying in {delay}s "
+            f"(attempt {next_job.attempt}/{self.config.max_download_retries})\n\n"
+            f"`{error}`",
+        )
+
+        await asyncio.sleep(delay)
+        await self._queue.put(next_job)
 
     async def _process(self, job: Job) -> None:
         record = await self.db.get_download(job.download_id)
@@ -91,6 +123,12 @@ class DownloadQueue:
 
         if message is None:
             await self._fail(job, "Source message is no longer available")
+            return
+
+        space_error = self._check_disk_space(record)
+
+        if space_error:
+            await self._fail(job, space_error)
             return
 
         status = job.status_message
@@ -109,12 +147,19 @@ class DownloadQueue:
             await self._on_progress(record, status, tracker, current, total)
 
         dest_path = record["dest_path"]
+        tmp_path = dest_path + ".part"
 
-        await self.client.download_media(
-            message,
-            file=dest_path,
-            progress_callback=on_progress,
-        )
+        try:
+            await self.client.download_media(
+                message,
+                file=tmp_path,
+                progress_callback=on_progress,
+            )
+            os.replace(tmp_path, dest_path)
+        except BaseException:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise
 
         size = os.path.getsize(dest_path) if os.path.exists(dest_path) else 0
         await self.db.update_download(
@@ -146,6 +191,28 @@ class DownloadQueue:
         )
 
     # helpers
+    def _check_disk_space(self, record: dict) -> str | None:
+        # record["size"] is 0 when Telegram didn't report a document size
+        # up front; nothing to compare against, so let the download proceed.
+        expected = record["size"]
+
+        if not expected:
+            return None
+
+        try:
+            free = shutil.disk_usage(self.config.download_dir).free
+        except OSError as e:
+            logger.warning("Could not check free disk space: %s", e)
+            return None
+
+        if free < expected:
+            return (
+                f"Not enough disk space: need {format_size(expected)}, "
+                f"only {format_size(free)} free"
+            )
+
+        return None
+
     async def _resolve_source_message(self, record: dict):
         # For a fresh forward the message is reachable; for a retry we look it
         # up again from Telegram, which may fail if the user deleted it.
@@ -199,10 +266,14 @@ class DownloadQueue:
 
     async def _trigger_arr(self, media_type: str, path: str) -> str:
         if media_type == "tv":
-            ok = await trigger_sonarr_scan(path)
+            ok = await trigger_sonarr_scan(
+                path, self.config.sonarr_url, self.config.sonarr_api_key
+            )
             return "Sonarr notified" if ok else "Sonarr scan failed"
 
-        ok = await trigger_radarr_scan(path)
+        ok = await trigger_radarr_scan(
+            path, self.config.radarr_url, self.config.radarr_api_key
+        )
         return "Radarr notified" if ok else "Radarr scan failed"
 
     async def _fail(self, job: Job, error: str) -> None:
