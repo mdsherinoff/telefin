@@ -26,7 +26,8 @@ async def run() -> None:
         print("\nFix the above and start TeleFin again.\n")
         sys.exit(1)
 
-    ensure_directory(config.download_dir)
+    for path in config.all_download_dirs():
+        ensure_directory(path)
 
     database = Database(config.db_path)
     await database.connect()

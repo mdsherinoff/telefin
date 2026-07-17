@@ -81,6 +81,8 @@ class Config:
 
     # Storage
     download_dir: str
+    download_dir_movies: str | None
+    download_dir_tv: str | None
     db_path: str
 
     # Downloads
@@ -114,6 +116,8 @@ class Config:
             watch_chats=_parse_chats(os.getenv("WATCH_CHAT", "me")),
             allowed_users=_parse_users(os.getenv("ALLOWED_USERS", "")),
             download_dir=os.getenv("DOWNLOAD_DIR", "/srv/media/incoming"),
+            download_dir_movies=os.getenv("DOWNLOAD_DIR_MOVIES") or None,
+            download_dir_tv=os.getenv("DOWNLOAD_DIR_TV") or None,
             db_path=os.getenv("DB_PATH", "telefin.db"),
             allowed_extensions=(
                 _parse_extensions(raw_extensions)
@@ -134,6 +138,26 @@ class Config:
             web_username=os.getenv("WEB_USERNAME") or None,
             web_password=os.getenv("WEB_PASSWORD") or None,
         )
+
+    def download_dir_for(self, media_type: str) -> str:
+        # media_type is "tv" or "movie" (see detect_media_type). Falls back
+        # to the shared DOWNLOAD_DIR when a per-type override isn't set, so
+        # single-drive setups keep working unchanged.
+        if media_type == "tv" and self.download_dir_tv:
+            return self.download_dir_tv
+
+        if media_type == "movie" and self.download_dir_movies:
+            return self.download_dir_movies
+
+        return self.download_dir
+
+    def all_download_dirs(self) -> list[str]:
+        return [
+            d for d in (
+                self.download_dir, self.download_dir_movies, self.download_dir_tv,
+            )
+            if d
+        ]
 
     def validate(self, require_users: bool = False) -> None:
         problems = []

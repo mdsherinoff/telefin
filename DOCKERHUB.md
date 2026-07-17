@@ -24,7 +24,7 @@ downloads it, hands it to Sonarr/Radarr, and Jellyfin picks it up.
 # docker-compose.yml
 services:
   telefin:
-    image: YOURUSER/telefin:latest
+    image: xherxn/telefin:latest
     container_name: telefin
     restart: unless-stopped
     env_file: ./.env
@@ -54,13 +54,14 @@ Set these in a `.env` file (see `.env.example` in the repo):
 | `ALLOWED_USERS` | Comma-separated Telegram user IDs allowed to send files |
 | `WATCH_CHAT` | `me` (Saved Messages) or a group ID, e.g. `me,-1001234567890` |
 | `DOWNLOAD_DIR` | Where files land (must match Sonarr/Radarr's path) |
+| `DOWNLOAD_DIR_MOVIES` / `DOWNLOAD_DIR_TV` | Optional — split movies/TV onto separate paths (e.g. separate drives); overrides `DOWNLOAD_DIR` per type |
 | `SONARR_URL` / `SONARR_API_KEY` | Optional — TV imports |
 | `RADARR_URL` / `RADARR_API_KEY` | Optional — movie imports |
 
 ## Tags
 
-- `latest` — current build
-- `0.1.0` — pinned version
+- `latest` — most recent tagged release
+- `X.Y.Z` / `X.Y` — pinned versions (e.g. `0.2.0`, `0.2`), published from git tags `vX.Y.Z`
 
 Built for `linux/amd64` and `linux/arm64`.
 

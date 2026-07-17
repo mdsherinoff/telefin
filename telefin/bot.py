@@ -67,7 +67,9 @@ def register_handlers(
             )
             return
 
-        safe_name, dest_path = safe_destination(config.download_dir, filename)
+        media_type = detect_media_type(filename)
+        download_dir = config.download_dir_for(media_type)
+        safe_name, dest_path = safe_destination(download_dir, filename)
         size = _document_size(event.message)
 
         # Skip duplicates
@@ -77,7 +79,7 @@ def register_handlers(
             await database.create_download(
                 filename=filename,
                 safe_filename=safe_name,
-                media_type=detect_media_type(filename),
+                media_type=media_type,
                 dest_path=dest_path,
                 sender_id=sender.id,
                 chat_id=event.chat_id,
@@ -90,8 +92,6 @@ def register_handlers(
                 parse_mode="md",
             )
             return
-
-        media_type = detect_media_type(filename)
 
         record = await database.create_download(
             filename=filename,

@@ -200,7 +200,7 @@ class DownloadQueue:
             return None
 
         try:
-            free = shutil.disk_usage(self.config.download_dir).free
+            free = shutil.disk_usage(os.path.dirname(record["dest_path"])).free
         except OSError as e:
             logger.warning("Could not check free disk space: %s", e)
             return None
