@@ -151,6 +151,13 @@ def create_app(
         if not record:
             raise HTTPException(status_code=404, detail="Not found")
 
+        if record["status"] == db.STATUS_DOWNLOADING:
+            # Deleting the DB row alone leaves the worker downloading the
+            # file in the background, tying up the queue. Signal it to
+            # abort on its next progress tick (it cleans up its own .part
+            # file when it does).
+            queue.cancel(download_id)
+
         if delete_file and record.get("dest_path"):
             _remove_file(record["dest_path"])
 

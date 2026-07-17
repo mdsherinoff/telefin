@@ -20,6 +20,12 @@ from utils.telegram_helpers import (
 logger = logging.getLogger(__name__)
 
 
+class DownloadCancelled(Exception):
+    # Raised from inside the Telethon progress_callback to abort an
+    # in-flight download when the user deletes it from the web dashboard.
+    pass
+
+
 @dataclass
 class Job:
     # A unit of work handed to a worker: which record to process, and the
@@ -48,6 +54,7 @@ class DownloadQueue:
 
         self._queue: asyncio.Queue[Job] = asyncio.Queue()
         self._workers: list[asyncio.Task] = []
+        self._cancel_requested: set[int] = set()
 
     # lifecycle
     def start(self) -> None:
@@ -67,6 +74,13 @@ class DownloadQueue:
         await self._queue.put(job)
         await self._publish(job.download_id, "queued")
 
+    def cancel(self, download_id: int) -> None:
+        # A job still sitting in the queue is already handled: _process
+        # looks the record up fresh and no-ops when it's gone. This only
+        # needs to interrupt an in-flight download_media() call, which we
+        # do by having the progress callback raise on its next tick.
+        self._cancel_requested.add(download_id)
+
     # worker loop
     async def _run_worker(self, index: int) -> None:
         while True:
@@ -76,6 +90,8 @@ class DownloadQueue:
                 await self._process(job)
             except asyncio.CancelledError:
                 raise
+            except DownloadCancelled:
+                logger.info("Job %s cancelled", job.download_id)
             except Exception as e:
                 logger.exception("Worker %d crashed on job %s", index, job)
 
@@ -84,6 +100,7 @@ class DownloadQueue:
                 else:
                     await self._fail(job, str(e))
             finally:
+                self._cancel_requested.discard(job.download_id)
                 self._queue.task_done()
 
     async def _retry_after_backoff(self, job: Job, error: Exception) -> None:
@@ -233,6 +250,9 @@ class DownloadQueue:
         current: int,
         total: int,
     ) -> None:
+        if record["id"] in self._cancel_requested:
+            raise DownloadCancelled(f"Download {record['id']} cancelled")
+
         if not tracker.should_update(current):
             return
 
