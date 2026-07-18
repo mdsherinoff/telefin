@@ -1,10 +1,16 @@
 import os
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from dotenv import load_dotenv
 
+# The .env file next to this module -- the single source of truth for both
+# the startup config load and the web dashboard's Settings page, regardless
+# of the process's current working directory.
+ENV_PATH = Path(__file__).resolve().parent / ".env"
+
 # Load environment variables from .env once, at import time.
-load_dotenv()
+load_dotenv(ENV_PATH)
 
 # Default set of video extensions we are willing to download.
 DEFAULT_EXTENSIONS = {

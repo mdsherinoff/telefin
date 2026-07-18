@@ -1,5 +1,9 @@
+from fastapi.testclient import TestClient
+
+import webapp
+from events import EventBus
 from tests.factories import make_config
-from webapp import _disk_stats
+from webapp import _disk_stats, create_app
 
 
 class TestDiskStats:
@@ -52,3 +56,57 @@ class TestDiskStats:
 
         assert len(disks) == 1
         assert "error" in disks[0]
+
+
+def make_client(tmp_path, monkeypatch) -> TestClient:
+    env_path = tmp_path / ".env"
+    env_path.write_text("TELEGRAM_API_ID=1\nRADARR_API_KEY=oldkey\n")
+    monkeypatch.setattr(webapp, "ENV_PATH", env_path)
+
+    config = make_config()
+    app = create_app(config, database=None, bus=EventBus(), queue=None)
+    return TestClient(app), env_path
+
+
+class TestSettingsEndpoint:
+    def test_get_returns_known_keys_from_env_file(self, tmp_path, monkeypatch):
+        client, _ = make_client(tmp_path, monkeypatch)
+
+        res = client.get("/api/settings")
+
+        assert res.status_code == 200
+        body = res.json()
+        assert body["TELEGRAM_API_ID"] == "1"
+        assert body["RADARR_API_KEY"] == "oldkey"
+        assert body["SONARR_API_KEY"] == ""  # not set in the file -> empty string
+
+    def test_post_writes_to_env_file(self, tmp_path, monkeypatch):
+        client, env_path = make_client(tmp_path, monkeypatch)
+
+        res = client.post("/api/settings", json={"RADARR_API_KEY": "newkey"})
+
+        assert res.status_code == 200
+        assert res.json() == {"ok": True, "restart_required": True}
+        assert "RADARR_API_KEY='newkey'" in env_path.read_text()
+
+    def test_post_rejects_unknown_key(self, tmp_path, monkeypatch):
+        client, _ = make_client(tmp_path, monkeypatch)
+
+        res = client.post("/api/settings", json={"NOT_A_REAL_SETTING": "x"})
+
+        assert res.status_code == 400
+
+    def test_post_rejects_non_numeric_value_for_numeric_key(self, tmp_path, monkeypatch):
+        client, _ = make_client(tmp_path, monkeypatch)
+
+        res = client.post("/api/settings", json={"WEB_PORT": "not-a-number"})
+
+        assert res.status_code == 400
+
+    def test_post_accepts_numeric_value_for_numeric_key(self, tmp_path, monkeypatch):
+        client, env_path = make_client(tmp_path, monkeypatch)
+
+        res = client.post("/api/settings", json={"WEB_PORT": "9000"})
+
+        assert res.status_code == 200
+        assert "WEB_PORT='9000'" in env_path.read_text()

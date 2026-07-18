@@ -2,11 +2,14 @@ import asyncio
 import base64
 import logging
 import os
+import re
 import secrets
 import shutil
 from pathlib import Path
 
+import dotenv
 from fastapi import (
+    Body,
     Depends,
     FastAPI,
     HTTPException,
@@ -19,7 +22,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
 import db
-from config import Config
+from config import ENV_PATH, Config
 from db import Database
 from events import EventBus
 from worker import DownloadQueue, Job
@@ -27,6 +30,27 @@ from worker import DownloadQueue, Job
 logger = logging.getLogger(__name__)
 
 WEB_DIR = Path(__file__).parent / "web"
+
+# Keys the Settings page is allowed to read/write in .env -- an explicit
+# allowlist so a POST can't be used to inject arbitrary environment
+# variables into the file. Numeric ones are validated as int-parseable.
+SETTINGS_KEYS = {
+    "TELEGRAM_API_ID", "TELEGRAM_API_HASH", "ALLOWED_USERS", "WATCH_CHAT",
+    "DOWNLOAD_DIR", "DOWNLOAD_DIR_MOVIES", "DOWNLOAD_DIR_TV",
+    "SONARR_URL", "SONARR_API_KEY", "RADARR_URL", "RADARR_API_KEY",
+    "SESSION_NAME", "MAX_CONCURRENT_DOWNLOADS", "PROGRESS_INTERVAL",
+    "MAX_DOWNLOAD_RETRIES", "RETRY_BACKOFF_SECONDS", "ALLOWED_EXTENSIONS",
+    "DB_PATH", "NOTIFY_INTERVAL_MINUTES", "RETENTION_DAYS",
+    "WEB_ENABLED", "WEB_HOST", "WEB_PORT", "WEB_USERNAME", "WEB_PASSWORD",
+    "LOG_LEVEL", "LOG_FILE", "LOG_MAX_BYTES", "LOG_BACKUP_COUNT",
+}
+
+SETTINGS_NUMERIC_KEYS = {
+    "TELEGRAM_API_ID", "MAX_CONCURRENT_DOWNLOADS", "PROGRESS_INTERVAL",
+    "MAX_DOWNLOAD_RETRIES", "RETRY_BACKOFF_SECONDS", "WEB_PORT",
+    "NOTIFY_INTERVAL_MINUTES", "RETENTION_DAYS", "LOG_MAX_BYTES",
+    "LOG_BACKUP_COUNT",
+}
 
 
 def _disk_stats(config: Config) -> list[dict]:
@@ -146,6 +170,43 @@ def create_app(
             "sonarr_configured": bool(config.sonarr_url and config.sonarr_api_key),
             "radarr_configured": bool(config.radarr_url and config.radarr_api_key),
         }
+
+    @app.get("/api/settings")
+    async def get_settings(_: None = Depends(check_auth)) -> dict:
+        values = dotenv.dotenv_values(ENV_PATH)
+        return {key: values.get(key, "") for key in SETTINGS_KEYS}
+
+    @app.post("/api/settings")
+    async def update_settings(
+        payload: dict = Body(...),
+        _: None = Depends(check_auth),
+    ) -> dict:
+        unknown = set(payload) - SETTINGS_KEYS
+
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown setting(s): {', '.join(sorted(unknown))}",
+            )
+
+        for key in SETTINGS_NUMERIC_KEYS & set(payload):
+            value = str(payload[key]).strip()
+
+            if value and not re.fullmatch(r"-?\d+", value):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{key} must be a number, got: {value!r}",
+                )
+
+        for key, value in payload.items():
+            dotenv.set_key(ENV_PATH, key, str(value))
+
+        logger.info(
+            "Settings updated via dashboard: %s (restart required to apply)",
+            ", ".join(sorted(payload)),
+        )
+
+        return {"ok": True, "restart_required": True}
 
     @app.post("/api/downloads/{download_id}/retry")
     async def retry(

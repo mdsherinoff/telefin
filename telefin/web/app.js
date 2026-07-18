@@ -31,7 +31,45 @@ const ICONS = {
   notify: fa("0 0 448 512", `<path d="M224 512c35.32 0 63.97-28.65 63.97-64H160.03c0 35.35 28.65 64 63.97 64zm215.39-149.71c-19.32-20.76-55.47-51.99-55.47-154.29 0-77.7-54.48-139.9-127.94-155.16V32c0-17.67-14.32-32-31.98-32s-31.98 14.33-31.98 32v20.84C118.56 68.1 64.08 130.3 64.08 208c0 102.3-36.15 133.53-55.47 154.29-6 6.45-8.66 14.16-8.61 21.71.11 16.4 12.98 32 32.1 32h383.8c19.12 0 32-15.6 32.1-32 .05-7.55-2.61-15.27-8.61-21.71z"/>`, 15),
   gear: fa("0 0 512 512", `<path d="M464 32H48C21.49 32 0 53.49 0 80v352c0 26.51 21.49 48 48 48h416c26.51 0 48-21.49 48-48V80c0-26.51-21.49-48-48-48zM224 416H64v-96h160v96zm0-160H64v-96h160v96zm224 160H288v-96h160v96zm0-160H288v-96h160v96z"/>`, 15),
   sortDesc: `<svg class="sort-caret" viewBox="0 0 320 512" width="12" height="12" fill="currentColor"><path d="M31.3 192h257.3c17.8 0 26.7 21.5 14.1 34.1L174.1 354.8c-7.8 7.8-20.5 7.8-28.3 0L17.2 226.1C4.6 213.5 13.5 192 31.3 192z"/></svg>`,
+  eye: fa("0 0 576 512", `<path d="M288 144a110.94 110.94 0 0 0-31.24 5 55.4 55.4 0 0 1 7.24 27 56 56 0 0 1-56 56 55.4 55.4 0 0 1-27-7.24A111.71 111.71 0 1 0 288 144zm284.52 97.4C518.29 135.59 410.93 64 288 64S57.68 135.64 3.48 241.41a32.35 32.35 0 0 0 0 29.19C57.71 376.41 165.07 448 288 448s230.32-71.64 284.52-177.41a32.35 32.35 0 0 0 0-29.19zM288 400c-98.65 0-189.09-55-237.93-144C98.91 167 189.34 112 288 112s189.09 55 237.93 144C477.1 345 386.66 400 288 400z"/>`, 15),
+  eyeSlash: fa("0 0 640 512", `<path d="M634 471L36 3.51A16 16 0 0 0 13.51 6l-10 12.49A16 16 0 0 0 6 41l598 467.49a16 16 0 0 0 22.49-2.49l10-12.49A16 16 0 0 0 634 471zM296.79 146.47l134.79 105.38C429.36 191.91 380.48 144 320 144a112.26 112.26 0 0 0-23.21 2.47zm46.42 219.07L208.42 260.16C210.65 320.09 259.53 368 320 368a113 113 0 0 0 23.21-2.46zM320 112c98.65 0 189.09 55 237.93 144a285.53 285.53 0 0 1-44 60.2l37.74 29.5a333.7 333.7 0 0 0 52.9-75.11 32.35 32.35 0 0 0 0-29.19C550.29 135.59 442.93 64 320 64c-36.7 0-71.71 7-104.63 18.81l46.41 36.29c18.94-4.3 38.34-7.1 58.22-7.1zm0 288c-98.65 0-189.08-55-237.93-144a285.47 285.47 0 0 1 44.05-60.19l-37.74-29.5a333.6 333.6 0 0 0-52.89 75.1 32.35 32.35 0 0 0 0 29.19C89.72 376.41 197.08 448 320 448c36.7 0 71.71-7.05 104.63-18.81l-46.41-36.28C359.28 397.2 339.89 400 320 400z"/>`, 15),
 };
+
+// Settings page -- mirrors the .env.example groupings (Basic vs Advanced).
+const SETTINGS_SCHEMA = [
+  { key: "TELEGRAM_API_ID", label: "Telegram API ID", type: "text", group: "basic", help: "From my.telegram.org → API development tools" },
+  { key: "TELEGRAM_API_HASH", label: "Telegram API Hash", type: "password", group: "basic" },
+  { key: "ALLOWED_USERS", label: "Allowed Users", type: "text", group: "basic", help: "Comma-separated Telegram user IDs allowed to send files" },
+  { key: "WATCH_CHAT", label: "Watch Chat", type: "text", group: "basic", help: "me, a group/channel ID, or a comma-separated mix" },
+  { key: "DOWNLOAD_DIR", label: "Download Directory", type: "text", group: "basic", help: "Fallback path; must match Sonarr/Radarr's view of the same folder" },
+  { key: "DOWNLOAD_DIR_MOVIES", label: "Movies Download Directory", type: "text", group: "basic", help: "Optional override for movies (e.g. a separate drive)" },
+  { key: "DOWNLOAD_DIR_TV", label: "TV Download Directory", type: "text", group: "basic", help: "Optional override for TV shows" },
+  { key: "SONARR_URL", label: "Sonarr URL", type: "text", group: "basic" },
+  { key: "SONARR_API_KEY", label: "Sonarr API Key", type: "password", group: "basic" },
+  { key: "RADARR_URL", label: "Radarr URL", type: "text", group: "basic" },
+  { key: "RADARR_API_KEY", label: "Radarr API Key", type: "password", group: "basic" },
+
+  { key: "SESSION_NAME", label: "Session Name", type: "text", group: "advanced", help: "Telegram session file name" },
+  { key: "MAX_CONCURRENT_DOWNLOADS", label: "Max Concurrent Downloads", type: "text", group: "advanced" },
+  { key: "PROGRESS_INTERVAL", label: "Progress Update Interval (s)", type: "text", group: "advanced" },
+  { key: "MAX_DOWNLOAD_RETRIES", label: "Max Download Retries", type: "text", group: "advanced" },
+  { key: "RETRY_BACKOFF_SECONDS", label: "Retry Backoff (s)", type: "text", group: "advanced" },
+  { key: "ALLOWED_EXTENSIONS", label: "Allowed Extensions", type: "text", group: "advanced", help: "Comma-separated, e.g. mkv,mp4,avi" },
+  { key: "DB_PATH", label: "Database Path", type: "text", group: "advanced" },
+  { key: "NOTIFY_INTERVAL_MINUTES", label: "Re-notify Interval (min)", type: "text", group: "advanced", help: "Re-announce stuck completed downloads to Sonarr/Radarr. 0 disables." },
+  { key: "RETENTION_DAYS", label: "History Retention (days)", type: "text", group: "advanced", help: "Auto-delete finished history older than this. 0 disables." },
+  { key: "WEB_ENABLED", label: "Web Dashboard Enabled", type: "checkbox", group: "advanced" },
+  { key: "WEB_HOST", label: "Web Host", type: "text", group: "advanced" },
+  { key: "WEB_PORT", label: "Web Port", type: "text", group: "advanced" },
+  { key: "WEB_USERNAME", label: "Web Username", type: "text", group: "advanced" },
+  { key: "WEB_PASSWORD", label: "Web Password", type: "password", group: "advanced" },
+  { key: "LOG_LEVEL", label: "Log Level", type: "select", group: "advanced", options: ["DEBUG", "INFO", "WARNING", "ERROR"] },
+  { key: "LOG_FILE", label: "Log File", type: "text", group: "advanced", help: "Optional; leave blank to log to stdout only" },
+  { key: "LOG_MAX_BYTES", label: "Log Max Bytes", type: "text", group: "advanced" },
+  { key: "LOG_BACKUP_COUNT", label: "Log Backup Count", type: "text", group: "advanced" },
+];
+
+const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 
 const STATUS_TITLES = {
   queued: "Queued",
@@ -400,6 +438,124 @@ async function loadConfig() {
     `Radarr ${c.radarr_configured ? "✓" : "✗"}`;
 }
 
+// settings
+
+function renderSettingsField(field, value) {
+  const help = field.help ? `<div class="field-help">${escapeHtml(field.help)}</div>` : "";
+
+  if (field.type === "checkbox") {
+    const checked = TRUE_VALUES.has(String(value).toLowerCase()) ? "checked" : "";
+    return `
+      <div class="field-row field-row-checkbox">
+        <label class="field-label">
+          <input type="checkbox" data-key="${field.key}" ${checked} />
+          ${escapeHtml(field.label)}
+        </label>
+      </div>`;
+  }
+
+  if (field.type === "select") {
+    const opts = field.options
+      .map((o) => `<option value="${o}" ${o === value ? "selected" : ""}>${o}</option>`)
+      .join("");
+    return `
+      <div class="field-row">
+        <label class="field-label">${escapeHtml(field.label)}</label>
+        <div class="field-control">
+          <select data-key="${field.key}">${opts}</select>
+          ${help}
+        </div>
+      </div>`;
+  }
+
+  if (field.type === "password") {
+    return `
+      <div class="field-row">
+        <label class="field-label">${escapeHtml(field.label)}</label>
+        <div class="field-control">
+          <div class="field-control-password">
+            <input type="password" data-key="${field.key}" value="${escapeHtml(value)}" autocomplete="off" />
+            <button type="button" class="field-reveal" data-reveal="${field.key}" title="Show/hide">${ICONS.eye}</button>
+          </div>
+          ${help}
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div class="field-row">
+      <label class="field-label">${escapeHtml(field.label)}</label>
+      <div class="field-control">
+        <input type="text" data-key="${field.key}" value="${escapeHtml(value)}" autocomplete="off" />
+        ${help}
+      </div>
+    </div>`;
+}
+
+function renderSettingsForm(values) {
+  el("settings-basic").innerHTML = SETTINGS_SCHEMA
+    .filter((f) => f.group === "basic")
+    .map((f) => renderSettingsField(f, values[f.key] ?? ""))
+    .join("");
+  el("settings-advanced").innerHTML = SETTINGS_SCHEMA
+    .filter((f) => f.group === "advanced")
+    .map((f) => renderSettingsField(f, values[f.key] ?? ""))
+    .join("");
+
+  document.querySelectorAll(".field-reveal").forEach((btn) => {
+    btn.onclick = () => {
+      const input = document.querySelector(`input[data-key="${btn.dataset.reveal}"]`);
+      const showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      btn.innerHTML = showing ? ICONS.eye : ICONS.eyeSlash;
+    };
+  });
+}
+
+async function loadSettings() {
+  const res = await fetch("/api/settings");
+  const values = await res.json();
+  renderSettingsForm(values);
+  el("settings-restart-banner").hidden = true;
+}
+
+function collectSettingsPayload() {
+  const payload = {};
+  for (const field of SETTINGS_SCHEMA) {
+    if (field.type === "checkbox") {
+      const input = document.querySelector(`input[data-key="${field.key}"]`);
+      payload[field.key] = input.checked ? "true" : "false";
+      continue;
+    }
+    const input = document.querySelector(`[data-key="${field.key}"]`);
+    if (input) payload[field.key] = input.value;
+  }
+  return payload;
+}
+
+async function saveSettings() {
+  try {
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(collectSettingsPayload()),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.detail || "Save failed");
+    el("settings-restart-banner").hidden = false;
+    toast("Settings saved");
+  } catch (e) {
+    toast(e.message || "Save failed", "error");
+  }
+}
+
+function showView(view) {
+  el("queue-view").hidden = view !== "queue";
+  el("settings-view").hidden = view !== "settings";
+  el("nav-activity-group").classList.toggle("active", view === "queue");
+  el("nav-settings-group").classList.toggle("active", view === "settings");
+}
+
 // data
 
 async function loadItems() {
@@ -565,6 +721,7 @@ function updateProgress(item) {
 
 document.querySelectorAll(".nav-child").forEach((nav) => {
   nav.onclick = () => {
+    showView("queue");
     document.querySelectorAll(".nav-child").forEach((n) => n.classList.remove("active"));
     nav.classList.add("active");
     state.filter = nav.dataset.filter;
@@ -577,6 +734,19 @@ document.querySelectorAll(".nav-child").forEach((nav) => {
 el("nav-parent").onclick = () => {
   document.querySelector('.nav-child[data-filter="active"]').click();
 };
+
+el("nav-settings").onclick = () => {
+  showView("settings");
+  loadSettings();
+};
+
+el("btn-toggle-advanced").onclick = () => {
+  const group = el("settings-advanced-group");
+  group.hidden = !group.hidden;
+  el("advanced-toggle-label").textContent = group.hidden ? "Show Advanced" : "Hide Advanced";
+};
+
+el("btn-save-settings").onclick = () => saveSettings();
 
 el("search").addEventListener("input", (e) => {
   state.query = e.target.value.trim().toLowerCase();
