@@ -73,7 +73,7 @@ def register_handlers(
         size = _document_size(event.message)
 
         # Skip duplicates
-        duplicate = await database.find_completed_duplicate(safe_name, size)
+        duplicate = await database.find_completed_duplicate(safe_name, size, media_type)
 
         if duplicate:
             await database.create_download(

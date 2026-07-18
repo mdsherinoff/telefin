@@ -140,7 +140,7 @@ def create_app(
     async def get_config(_: None = Depends(check_auth)) -> dict:
         return {
             "download_dir": config.download_dir,
-            "watch_chat": config.watch_chat,
+            "watch_chat": ",".join(str(c) for c in config.watch_chats),
             "max_concurrent_downloads": config.max_concurrent_downloads,
             "allowed_extensions": sorted(config.allowed_extensions),
             "sonarr_configured": bool(config.sonarr_url and config.sonarr_api_key),
@@ -196,6 +196,20 @@ def create_app(
             )
 
         return {"ok": True}
+
+    @app.post("/api/downloads/{download_id}/notify")
+    async def notify(
+        download_id: int,
+        _: None = Depends(check_auth),
+    ) -> dict:
+        try:
+            arr_result = await queue.renotify(download_id)
+        except LookupError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+
+        return {"ok": True, "result": arr_result}
 
     @app.delete("/api/downloads/{download_id}")
     async def delete(

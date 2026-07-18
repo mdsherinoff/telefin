@@ -97,6 +97,8 @@ class Config:
     sonarr_api_key: str | None
     radarr_url: str | None
     radarr_api_key: str | None
+    notify_interval_minutes: int
+    retention_days: int
 
     # Web dashboard
     web_enabled: bool
@@ -132,6 +134,8 @@ class Config:
             sonarr_api_key=os.getenv("SONARR_API_KEY"),
             radarr_url=os.getenv("RADARR_URL"),
             radarr_api_key=os.getenv("RADARR_API_KEY"),
+            notify_interval_minutes=_get_int("NOTIFY_INTERVAL_MINUTES", 60),
+            retention_days=_get_int("RETENTION_DAYS", 0),
             web_enabled=_get_bool("WEB_ENABLED", True),
             web_host=os.getenv("WEB_HOST", "0.0.0.0"),
             web_port=_get_int("WEB_PORT", 8420),

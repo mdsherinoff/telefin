@@ -31,6 +31,12 @@ class FakeDatabase:
         if download_id in self._rows:
             self._rows[download_id].update(fields)
 
+    async def list_downloads(self, status: str | None = None, **_ignored) -> list[dict]:
+        rows = self._rows.values()
+        if status is not None:
+            rows = [r for r in rows if r["status"] == status]
+        return [dict(r) for r in rows]
+
 
 def make_queue() -> tuple[DownloadQueue, FakeDatabase]:
     fake_db = FakeDatabase()
@@ -74,6 +80,77 @@ class TestCancelSignal:
         queue.cancel(42)
 
         assert 42 in queue._cancel_requested
+
+
+class TestRenotify:
+    def test_raises_lookup_error_when_missing(self):
+        queue, _ = make_queue()
+
+        try:
+            asyncio.run(queue.renotify(999))
+            assert False, "expected LookupError"
+        except LookupError:
+            pass
+
+    def test_raises_value_error_when_not_completed(self):
+        queue, fake_db = make_queue()
+        record = fake_db.add(status=db.STATUS_QUEUED, filename="movie.mkv", dest_path="/x")
+
+        try:
+            asyncio.run(queue.renotify(record["id"]))
+            assert False, "expected ValueError"
+        except ValueError:
+            pass
+
+    def test_raises_value_error_when_file_missing(self, tmp_path):
+        queue, fake_db = make_queue()
+        missing = str(tmp_path / "gone.mkv")
+        record = fake_db.add(
+            status=db.STATUS_COMPLETED, filename="movie.mkv",
+            dest_path=missing, media_type="movie",
+        )
+
+        try:
+            asyncio.run(queue.renotify(record["id"]))
+            assert False, "expected ValueError"
+        except ValueError:
+            pass
+
+    def test_retriggers_when_file_still_present(self, tmp_path):
+        queue, fake_db = make_queue()
+        dest = tmp_path / "movie.mkv"
+        dest.write_bytes(b"x")
+        record = fake_db.add(
+            status=db.STATUS_COMPLETED, filename="movie.mkv",
+            dest_path=str(dest), media_type="movie", arr_result="stale",
+        )
+
+        result = asyncio.run(queue.renotify(record["id"]))
+
+        assert result == "Radarr scan failed"  # no RADARR_URL configured in tests
+        assert fake_db._rows[record["id"]]["arr_result"] == result
+
+
+class TestRenotifyPending:
+    def test_only_renotifies_files_still_on_disk(self, tmp_path):
+        queue, fake_db = make_queue()
+        present = tmp_path / "present.mkv"
+        present.write_bytes(b"x")
+
+        pending = fake_db.add(
+            status=db.STATUS_COMPLETED, filename="present.mkv",
+            dest_path=str(present), media_type="movie", arr_result="stale",
+        )
+        already_imported = fake_db.add(
+            status=db.STATUS_COMPLETED, filename="gone.mkv",
+            dest_path=str(tmp_path / "gone.mkv"), media_type="movie",
+            arr_result="original",
+        )
+
+        asyncio.run(queue._renotify_pending())
+
+        assert fake_db._rows[pending["id"]]["arr_result"] == "Radarr scan failed"
+        assert fake_db._rows[already_imported["id"]]["arr_result"] == "original"
 
 
 class TestFloodWaitRetry:

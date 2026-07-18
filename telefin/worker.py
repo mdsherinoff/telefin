@@ -57,6 +57,8 @@ class DownloadQueue:
         self._queue: asyncio.Queue[Job] = asyncio.Queue()
         self._workers: list[asyncio.Task] = []
         self._cancel_requested: set[int] = set()
+        self._notify_task: asyncio.Task | None = None
+        self._retention_task: asyncio.Task | None = None
 
     # lifecycle
     def start(self) -> None:
@@ -68,9 +70,29 @@ class DownloadQueue:
 
         logger.info("Started %d download worker(s)", count)
 
+        if self.config.notify_interval_minutes > 0:
+            self._notify_task = asyncio.create_task(self._run_periodic_notify())
+            logger.info(
+                "Re-notifying Sonarr/Radarr about pending files every %d minute(s)",
+                self.config.notify_interval_minutes,
+            )
+
+        if self.config.retention_days > 0:
+            self._retention_task = asyncio.create_task(self._run_periodic_retention())
+            logger.info(
+                "Pruning download history older than %d day(s) daily",
+                self.config.retention_days,
+            )
+
     async def stop(self) -> None:
         for task in self._workers:
             task.cancel()
+
+        if self._notify_task:
+            self._notify_task.cancel()
+
+        if self._retention_task:
+            self._retention_task.cancel()
 
     async def enqueue(self, job: Job) -> None:
         await self._queue.put(job)
@@ -101,6 +123,91 @@ class DownloadQueue:
         )
         await self._publish(download_id, "cancelled")
         return True
+
+    async def renotify(self, download_id: int) -> str:
+        # The Sonarr/Radarr scan command is fire-and-forget: if the title
+        # wasn't requested through Seerr, the *arr app just ignores it and
+        # the file sits in the incoming folder untouched. Re-triggering the
+        # scan is what lets a later Seerr request pick it up without
+        # restarting telefin. Raises LookupError (record missing) or
+        # ValueError (not eligible) for the caller to translate into an
+        # HTTP status.
+        record = await self.db.get_download(download_id)
+
+        if not record:
+            raise LookupError(f"Download {download_id} not found")
+
+        if record["status"] != db.STATUS_COMPLETED:
+            raise ValueError(f"Cannot notify a {record['status']} download")
+
+        dest_path = record["dest_path"]
+
+        if not dest_path or not os.path.exists(dest_path):
+            raise ValueError(
+                "File is no longer at the download path "
+                "(already imported, or removed)"
+            )
+
+        arr_result = await self._trigger_arr(record["media_type"], dest_path)
+        await self.db.update_download(download_id, arr_result=arr_result)
+        await self._publish(download_id, "completed")
+        return arr_result
+
+    async def _run_periodic_notify(self) -> None:
+        interval = self.config.notify_interval_minutes * 60
+
+        while True:
+            try:
+                await asyncio.sleep(interval)
+                await self._renotify_pending()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Periodic Sonarr/Radarr re-notify sweep failed")
+
+    async def _renotify_pending(self) -> None:
+        # Completed downloads whose file is still sitting at dest_path
+        # haven't been imported by Sonarr/Radarr yet (a successful import
+        # moves the file out), so re-announce just those.
+        records = await self.db.list_downloads(status=db.STATUS_COMPLETED, limit=1000)
+        pending = [
+            r for r in records
+            if r["dest_path"] and os.path.exists(r["dest_path"])
+        ]
+
+        if not pending:
+            return
+
+        logger.info(
+            "Re-notifying Sonarr/Radarr about %d file(s) still pending import",
+            len(pending),
+        )
+
+        for record in pending:
+            try:
+                arr_result = await self._trigger_arr(
+                    record["media_type"], record["dest_path"]
+                )
+                await self.db.update_download(record["id"], arr_result=arr_result)
+                await self._publish(record["id"], "completed")
+            except Exception as e:
+                logger.warning("Re-notify failed for %s: %s", record["id"], e)
+
+    async def _run_periodic_retention(self) -> None:
+        while True:
+            try:
+                removed = await self.db.delete_old_downloads(self.config.retention_days)
+                if removed:
+                    logger.info(
+                        "Pruned %d old download record(s) (retention: %d day(s))",
+                        removed, self.config.retention_days,
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Retention sweep failed")
+
+            await asyncio.sleep(24 * 3600)
 
     # worker loop
     async def _run_worker(self, index: int) -> None:

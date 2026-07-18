@@ -139,6 +139,22 @@ button { font: inherit; }
 .sidebar-stats div { display: flex; justify-content: space-between; padding: 2px 0; }
 .sidebar-stats b { color: var(--text-dim); font-weight: 500; }
 
+.sidebar-disks {
+  padding: 4px 17px 14px;
+  font-size: 12px;
+  color: #777;
+}
+.disk-row { padding: 6px 0; }
+.disk-row-label {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  text-transform: capitalize;
+}
+.disk-row .progress { height: 6px; }
+.disk-row .progress-bar.warn { background: var(--amber); }
+.disk-row .progress-bar.danger { background: var(--danger); }
+
 .content { flex: 1; min-width: 0; padding: 0 20px 40px; }
 
 .toolbar {

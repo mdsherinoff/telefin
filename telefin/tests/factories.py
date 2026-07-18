@@ -13,6 +13,7 @@ def make_config(**overrides) -> Config:
         max_download_retries=3, retry_backoff_seconds=10,
         sonarr_url=None, sonarr_api_key=None,
         radarr_url=None, radarr_api_key=None,
+        notify_interval_minutes=60, retention_days=0,
         web_enabled=True, web_host="0.0.0.0", web_port=8420,
         web_username=None, web_password=None,
     )

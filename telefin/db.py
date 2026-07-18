@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import aiosqlite
 
 logger = logging.getLogger(__name__)
@@ -14,6 +14,9 @@ STATUS_CANCELLED = "cancelled"
 
 # Statuses that are still "in flight" and should be reset on a fresh start.
 NON_TERMINAL = (STATUS_QUEUED, STATUS_DOWNLOADING, STATUS_IMPORTING)
+
+# Finished statuses eligible for retention pruning.
+TERMINAL = (STATUS_COMPLETED, STATUS_FAILED, STATUS_SKIPPED, STATUS_CANCELLED)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS downloads (
@@ -147,15 +150,19 @@ class Database:
         self,
         safe_filename: str,
         size: int,
+        media_type: str,
     ) -> dict | None:
-        
+        # media_type is part of the match: movies and TV episodes now land
+        # in separate directories (see Config.download_dir_for), so an
+        # identical filename+size no longer implies the same physical file
+        # the way it did when everything shared one download directory.
         cursor = await self._conn.execute(
             """
             SELECT * FROM downloads
-            WHERE safe_filename = ? AND status = ?
+            WHERE safe_filename = ? AND status = ? AND media_type = ?
             ORDER BY id DESC LIMIT 1
             """,
-            (safe_filename, STATUS_COMPLETED),
+            (safe_filename, STATUS_COMPLETED, media_type),
         )
         row = await cursor.fetchone()
 
@@ -202,6 +209,26 @@ class Database:
             await self._conn.commit()
 
         return record
+
+    async def delete_old_downloads(self, days: int) -> int:
+        # Prunes finished (terminal-status) records older than `days`, using
+        # completed_at when set and falling back to created_at for rows that
+        # never got one (e.g. skipped duplicates). Doesn't touch files on
+        # disk -- only the history row.
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        placeholders = ", ".join("?" for _ in TERMINAL)
+
+        cursor = await self._conn.execute(
+            f"""
+            DELETE FROM downloads
+            WHERE status IN ({placeholders})
+            AND COALESCE(completed_at, created_at) < ?
+            """,
+            (*TERMINAL, cutoff),
+        )
+        await self._conn.commit()
+
+        return cursor.rowcount
 
     async def get_stats(self) -> dict:
         cursor = await self._conn.execute(

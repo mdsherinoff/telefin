@@ -24,6 +24,7 @@ const ICONS = {
   retry: svg(`<path d="M3 12a9 9 0 1 0 2.64-6.36"/><path d="M3 3v6h6"/>`, 15),
   remove: svg(`<path d="M18 6 6 18M6 6l12 12"/>`, 15),
   stop: svg(`<rect x="6" y="6" width="12" height="12" rx="1"/>`, 15),
+  notify: svg(`<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>`, 15),
   gear: svg(`<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/>`, 15),
   sortDesc: `<svg class="sort-caret" viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="m7 10 5 6 5-6Z"/></svg>`,
 };
@@ -273,6 +274,8 @@ function renderRow(item) {
   if (del) del.onclick = () => deleteItem(item.id);
   const cancel = row.querySelector("[data-action=cancel]");
   if (cancel) cancel.onclick = () => cancelItem(item.id);
+  const notify = row.querySelector("[data-action=notify]");
+  if (notify) notify.onclick = () => notifyItem(item.id);
 
   return row;
 }
@@ -287,6 +290,9 @@ function statusTitle(item) {
 
 function renderActions(item) {
   const buttons = [];
+  if (item.status === "completed") {
+    buttons.push(`<button class="icon-btn" data-action="notify" title="Notify Sonarr/Radarr again">${ICONS.notify}</button>`);
+  }
   if (["failed", "completed", "skipped", "cancelled"].includes(item.status)) {
     buttons.push(`<button class="icon-btn" data-action="retry" title="Retry">${ICONS.retry}</button>`);
     buttons.push(`<button class="icon-btn" data-action="delete" title="Remove from list">${ICONS.remove}</button>`);
@@ -358,6 +364,27 @@ async function loadStats() {
   el("stat-completed").textContent = s.completed;
   el("stat-failed").textContent = s.failed;
   el("stat-total").textContent = formatSize(s.total_bytes);
+  renderDisks(s.disks || []);
+}
+
+function renderDisks(disks) {
+  const container = el("sidebar-disks");
+  container.innerHTML = disks.map((disk) => {
+    const label = disk.roles.join(" + ");
+    if (disk.error) {
+      return `
+        <div class="disk-row">
+          <div class="disk-row-label"><span>${escapeHtml(label)}</span><span>unreachable</span></div>
+        </div>`;
+    }
+    const pct = disk.used_percent || 0;
+    const barClass = pct >= 95 ? "danger" : pct >= 85 ? "warn" : "";
+    return `
+      <div class="disk-row">
+        <div class="disk-row-label"><span>${escapeHtml(label)}</span><span>${formatSize(disk.free)} free</span></div>
+        <div class="progress"><div class="progress-bar ${barClass}" style="width:${pct}%"></div></div>
+      </div>`;
+  }).join("");
 }
 
 async function loadConfig() {
@@ -411,6 +438,18 @@ async function cancelItem(id) {
     toast("Download cancelled");
   } catch {
     toast("Cancel failed", "error");
+  }
+  await refresh();
+}
+
+async function notifyItem(id) {
+  try {
+    const res = await fetch(`/api/downloads/${id}/notify`, { method: "POST" });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.detail || "");
+    toast(body.result || "Sonarr/Radarr notified");
+  } catch (e) {
+    toast(e.message || "Notify failed", "error");
   }
   await refresh();
 }
