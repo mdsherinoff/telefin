@@ -254,7 +254,7 @@ function renderRow(item) {
     <td class="title-cell">
       <div class="title-text" title="${escapeHtml(item.filename)}">${escapeHtml(item.filename)}</div>
     </td>
-    <td class="col-type"><span class="tag">${item.media_type === "tv" ? "TV" : "Movie"}</span></td>
+    <td class="col-type"><span class="tag ${item.media_type === "tv" ? "tag-tv" : "tag-movie"}">${item.media_type === "tv" ? "TV" : "Movie"}</span></td>
     ${cols}
     <td class="col-gear"><div class="actions">${renderActions(item)}</div></td>
   `;

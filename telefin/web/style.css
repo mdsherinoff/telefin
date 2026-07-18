@@ -1,20 +1,27 @@
 :root {
-  --header-bg: #1a1a1a;
+  /* Sonarr's 3-tier dark surface stack: header/sidebar, toolbar, content. */
+  --header-bg: #2a2a2a;
   --sidebar-bg: #2a2a2a;
-  --nav-active-bg: #242424;
+  --toolbar-bg: #262626;
+  --nav-active-bg: #333333;
   --page-bg: #202020;
-  --row-hover: #2e2e2e;
-  --line: #2d2d2d;
+  --row-hover: rgba(255, 255, 255, 0.08);
+  --line: #858585;
   --line-strong: #454545;
   --text: #e1e2e3;
   --text-dim: #999;
-  --accent: #35c5f2;  
-  --link: #5d9cec;       
-  --amber: #ffa500;      
+  --accent: #35c5f4;        /* brand cyan -- hover states */
+  --accent-active: #2193b5; /* active sidebar item -- left border + text */
+  --link: #5d9cec;
+  --amber: #ffa500;
   --danger: #f05050;
-  --tag-bg: #4e4e4e;     
+  --success: #00853d;
+  --purple: #7a43b6;
+  --torrent: #00853d;
+  --usenet: #17b1d9;
+  --tag-bg: #4e4e4e;
   --bar: #5d9cec;
-  --bar-track: #3a3a3a;
+  --bar-track: #727070;
 }
 
 * { box-sizing: border-box; }
@@ -42,7 +49,7 @@ button { font: inherit; }
   z-index: 10;
 }
 .header-logo {
-  width: 230px;
+  width: 210px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -89,7 +96,7 @@ button { font: inherit; }
 .layout { display: flex; min-height: calc(100vh - 60px); }
 
 .sidebar {
-  width: 230px;
+  width: 210px;
   flex-shrink: 0;
   background: var(--sidebar-bg);
   display: flex;
@@ -97,7 +104,7 @@ button { font: inherit; }
 }
 
 .nav-group { border-left: 3px solid transparent; }
-.nav-group.active { border-left-color: var(--accent); background: var(--nav-active-bg); }
+.nav-group.active { border-left-color: var(--accent-active); background: var(--nav-active-bg); }
 
 .nav-parent,
 .nav-child {
@@ -111,12 +118,13 @@ button { font: inherit; }
   text-align: left;
   cursor: pointer;
   font-size: 14px;
+  transition: color 0.15s ease;
 }
-.nav-parent { padding: 12px 17px; }
-.nav-group.active .nav-parent { color: var(--accent); }
-.nav-child { padding: 9px 17px 9px 46px; color: var(--text); }
-.nav-child:hover, .nav-parent:hover { background: #333; }
-.nav-child.active { color: var(--accent); }
+.nav-parent { padding: 12px 24px; }
+.nav-group.active .nav-parent { color: var(--accent-active); }
+.nav-child { padding: 10px 24px 10px 35px; color: var(--text); }
+.nav-child:hover, .nav-parent:hover { color: var(--accent); }
+.nav-child.active { color: var(--accent-active); }
 
 .nav-count {
   margin-left: auto;
@@ -161,27 +169,30 @@ button { font: inherit; }
   display: flex;
   align-items: stretch;
   gap: 4px;
-  padding: 10px 0 14px;
+  height: 60px;
+  margin: 0 -20px;
+  padding: 0 20px;
+  background: var(--toolbar-bg);
 }
 .toolbar-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   gap: 6px;
   background: none;
   border: none;
   color: var(--text);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.2;
   text-align: center;
-  padding: 8px 14px;
-  min-width: 64px;
+  width: 60px;
+  padding: 0;
 }
-.toolbar-btn:hover { color: #fff; }
+.toolbar-btn:hover { color: var(--accent); }
 .toolbar-btn[disabled] { opacity: 0.4; cursor: default; }
-.toolbar-sep { width: 1px; background: var(--line-strong); margin: 4px 10px; }
+.toolbar-sep { width: 1px; align-self: stretch; margin: 14px 20px; background: var(--line-strong); }
 
 .table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .table th {
@@ -198,7 +209,7 @@ button { font: inherit; }
   border-bottom: 1px solid var(--line);
   vertical-align: middle;
 }
-.table tbody tr:hover { background: var(--row-hover); }
+.table tbody tr:hover { background: var(--row-hover); transition: background-color 500ms; }
 
 .col-check { width: 30px; }
 .col-icon { width: 34px; }
@@ -212,7 +223,10 @@ button { font: inherit; }
 
 td.col-icon svg { display: block; }
 td.col-icon .status-downloading { color: var(--amber); }
+td.col-icon .status-importing { color: var(--link); }
+td.col-icon .status-completed { color: var(--success); }
 td.col-icon .status-failed { color: var(--danger); }
+td.col-icon .status-skipped { color: var(--text-dim); }
 td.col-icon .status-cancelled { color: var(--text-dim); }
 
 .title-text {
@@ -232,27 +246,33 @@ td.col-error div {
 
 .tag {
   display: inline-block;
-  font-size: 11px;
+  font-size: 12px;
   background: var(--tag-bg);
+  border: 1px solid var(--tag-bg);
   color: #fff;
-  border-radius: 2px;
-  padding: 1px 7px;
+  border-radius: 4px;
+  padding: 2px 7px;
   white-space: nowrap;
 }
+/* Movie/TV pills borrow Sonarr's torrent/usenet protocol-label convention:
+   solid border+background in a color tied to the tag's meaning. */
+.tag.tag-movie { background: var(--torrent); border-color: var(--torrent); }
+.tag.tag-tv { background: var(--usenet); border-color: var(--usenet); }
 
 .progress {
   position: relative;
-  height: 14px;
+  height: 15px;
   background: var(--bar-track);
-  border-radius: 7px;
+  border-radius: 4px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
   overflow: hidden;
 }
 .progress-bar {
   height: 100%;
   background: var(--bar);
-  border-radius: 7px;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.15);
   width: 0%;
-  transition: width 0.4s ease;
+  transition: width 0.6s ease;
 }
 .progress-text {
   position: absolute;
@@ -355,7 +375,7 @@ td.col-error div {
   .nav-parent { display: none; }
   .nav-child { justify-content: center; padding: 10px 6px; }
   .sidebar-stats { display: none; }
-  .col-size, .col-date, .col-timeleft,
-  td.col-size, td.col-date, td.col-timeleft { display: none; }
+  .col-size, .col-date, .col-timeleft, .col-type,
+  td.col-size, td.col-date, td.col-timeleft, td.col-type { display: none; }
   .col-progress { width: 90px; }
 }
