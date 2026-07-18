@@ -197,6 +197,7 @@ button { font: inherit; }
 td.col-icon svg { display: block; }
 td.col-icon .status-downloading { color: var(--amber); }
 td.col-icon .status-failed { color: var(--danger); }
+td.col-icon .status-cancelled { color: var(--text-dim); }
 
 .title-text {
   color: var(--link);

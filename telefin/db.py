@@ -10,6 +10,7 @@ STATUS_IMPORTING = "importing"
 STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
 STATUS_SKIPPED = "skipped"
+STATUS_CANCELLED = "cancelled"
 
 # Statuses that are still "in flight" and should be reset on a fresh start.
 NON_TERMINAL = (STATUS_QUEUED, STATUS_DOWNLOADING, STATUS_IMPORTING)

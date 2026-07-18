@@ -1,4 +1,5 @@
 from utils.telegram_helpers import (
+    cleanup_orphaned_partials,
     format_size,
     is_allowed_user,
     is_tv_show,
@@ -101,3 +102,37 @@ class TestMakeProgressBar:
     def test_clamps_out_of_range(self):
         assert make_progress_bar(-1.0, width=4) == "[░░░░]"
         assert make_progress_bar(2.0, width=4) == "[████]"
+
+
+class TestCleanupOrphanedPartials:
+    def test_removes_part_files(self, tmp_path):
+        (tmp_path / "movie.mkv.part").write_bytes(b"partial")
+        (tmp_path / "movie.mkv").write_bytes(b"complete")
+
+        removed = cleanup_orphaned_partials([str(tmp_path)])
+
+        assert removed == 1
+        assert not (tmp_path / "movie.mkv.part").exists()
+        assert (tmp_path / "movie.mkv").exists()
+
+    def test_no_partials_is_a_noop(self, tmp_path):
+        (tmp_path / "movie.mkv").write_bytes(b"complete")
+
+        assert cleanup_orphaned_partials([str(tmp_path)]) == 0
+
+    def test_sweeps_multiple_dirs(self, tmp_path):
+        movies = tmp_path / "movies"
+        tv = tmp_path / "tv"
+        movies.mkdir()
+        tv.mkdir()
+        (movies / "a.mkv.part").write_bytes(b"x")
+        (tv / "b.mkv.part").write_bytes(b"x")
+
+        removed = cleanup_orphaned_partials([str(movies), str(tv)])
+
+        assert removed == 2
+
+    def test_missing_dir_is_ignored(self, tmp_path):
+        missing = tmp_path / "does-not-exist"
+
+        assert cleanup_orphaned_partials([str(missing)]) == 0

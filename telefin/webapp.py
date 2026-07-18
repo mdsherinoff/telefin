@@ -3,6 +3,7 @@ import base64
 import logging
 import os
 import secrets
+import shutil
 from pathlib import Path
 
 from fastapi import (
@@ -26,6 +27,36 @@ from worker import DownloadQueue, Job
 logger = logging.getLogger(__name__)
 
 WEB_DIR = Path(__file__).parent / "web"
+
+
+def _disk_stats(config: Config) -> list[dict]:
+    # Group configured download dirs by physical path so movies/TV sharing
+    # a drive (or a single-drive setup) show one entry, not duplicates.
+    roles_by_path: dict[str, list[str]] = {}
+
+    if config.download_dir_movies:
+        roles_by_path.setdefault(config.download_dir_movies, []).append("movies")
+    if config.download_dir_tv:
+        roles_by_path.setdefault(config.download_dir_tv, []).append("tv")
+    if not config.download_dir_movies or not config.download_dir_tv:
+        roles_by_path.setdefault(config.download_dir, []).append("default")
+
+    disks = []
+    for path, roles in roles_by_path.items():
+        entry = {"path": path, "roles": roles}
+        try:
+            usage = shutil.disk_usage(path)
+            entry["total"] = usage.total
+            entry["free"] = usage.free
+            entry["used_percent"] = (
+                round((usage.used / usage.total) * 100, 1) if usage.total else 0
+            )
+        except OSError as e:
+            entry["error"] = str(e)
+        disks.append(entry)
+
+    return disks
+
 
 def create_app(
     config: Config,
@@ -101,7 +132,9 @@ def create_app(
 
     @app.get("/api/stats")
     async def stats(_: None = Depends(check_auth)) -> dict:
-        return await database.get_stats()
+        result = await database.get_stats()
+        result["disks"] = _disk_stats(config)
+        return result
 
     @app.get("/api/config")
     async def get_config(_: None = Depends(check_auth)) -> dict:
@@ -137,6 +170,30 @@ def create_app(
             completed_at=None,
         )
         await queue.enqueue(Job(download_id, None))
+
+        return {"ok": True}
+
+    @app.post("/api/downloads/{download_id}/cancel")
+    async def cancel(
+        download_id: int,
+        _: None = Depends(check_auth),
+    ) -> dict:
+        record = await database.get_download(download_id)
+
+        if not record:
+            raise HTTPException(status_code=404, detail="Not found")
+
+        if record["status"] == db.STATUS_QUEUED:
+            cancelled = await queue.cancel_queued(download_id)
+            if not cancelled:
+                raise HTTPException(status_code=409, detail="No longer queued")
+        elif record["status"] == db.STATUS_DOWNLOADING:
+            queue.cancel(download_id)
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot cancel a {record['status']} download",
+            )
 
         return {"ok": True}
 

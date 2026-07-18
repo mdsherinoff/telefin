@@ -5,6 +5,8 @@ import shutil
 import time
 from dataclasses import dataclass
 
+from telethon.errors import FloodWaitError
+
 import db
 from config import Config
 from db import Database
@@ -75,11 +77,30 @@ class DownloadQueue:
         await self._publish(job.download_id, "queued")
 
     def cancel(self, download_id: int) -> None:
-        # A job still sitting in the queue is already handled: _process
-        # looks the record up fresh and no-ops when it's gone. This only
-        # needs to interrupt an in-flight download_media() call, which we
-        # do by having the progress callback raise on its next tick.
+        # Interrupts an in-flight download_media() call by having the
+        # progress callback raise on its next tick. _run_worker persists
+        # the resulting status once the download actually aborts.
         self._cancel_requested.add(download_id)
+
+    async def cancel_queued(self, download_id: int) -> bool:
+        # Cancels a job that hasn't started downloading yet, preserving its
+        # history (unlike delete, which removes the row entirely). Marking
+        # it here relies on _process re-checking the status is still QUEUED
+        # once dequeued, so the stale Job sitting in self._queue is skipped
+        # rather than processed.
+        record = await self.db.get_download(download_id)
+
+        if not record or record["status"] != db.STATUS_QUEUED:
+            return False
+
+        await self.db.update_download(
+            download_id,
+            status=db.STATUS_CANCELLED,
+            error="Cancelled by user",
+            completed_at=_now_iso(),
+        )
+        await self._publish(download_id, "cancelled")
+        return True
 
     # worker loop
     async def _run_worker(self, index: int) -> None:
@@ -92,6 +113,16 @@ class DownloadQueue:
                 raise
             except DownloadCancelled:
                 logger.info("Job %s cancelled", job.download_id)
+                await self.db.update_download(
+                    job.download_id,
+                    status=db.STATUS_CANCELLED,
+                    error="Cancelled by user",
+                    completed_at=_now_iso(),
+                )
+                await self._publish(job.download_id, "cancelled")
+                await self._edit(job.status_message, "Download cancelled")
+            except FloodWaitError as e:
+                await self._retry_after_flood_wait(job, e)
             except Exception as e:
                 logger.exception("Worker %d crashed on job %s", index, job)
 
@@ -129,11 +160,43 @@ class DownloadQueue:
         await asyncio.sleep(delay)
         await self._queue.put(next_job)
 
+    async def _retry_after_flood_wait(self, job: Job, error: FloodWaitError) -> None:
+        # Telegram tells us exactly how long to back off; this doesn't
+        # count against max_download_retries (it's rate limiting, not a
+        # failure) and the job keeps its original attempt count.
+        delay = error.seconds + 1
+
+        logger.warning(
+            "Job %s hit a Telegram flood-wait, retrying in %ds",
+            job.download_id, delay,
+        )
+
+        await self.db.update_download(
+            job.download_id,
+            status=db.STATUS_QUEUED,
+            error=f"Waiting on Telegram rate limit ({delay}s)",
+        )
+        await self._publish(job.download_id, "queued")
+        await self._edit(
+            job.status_message,
+            f"Telegram rate limit hit, retrying in {delay}s...",
+        )
+
+        await asyncio.sleep(delay)
+        await self._queue.put(job)
+
     async def _process(self, job: Job) -> None:
         record = await self.db.get_download(job.download_id)
 
         if not record:
             logger.warning("Job %s has no record, skipping", job.download_id)
+            return
+
+        if record["status"] != db.STATUS_QUEUED:
+            logger.info(
+                "Job %s no longer queued (status=%s), skipping",
+                job.download_id, record["status"],
+            )
             return
 
         message = await self._resolve_source_message(record)
@@ -238,6 +301,11 @@ class DownloadQueue:
                 record["chat_id"],
                 ids=record["message_id"],
             )
+        except FloodWaitError:
+            # Transient rate limiting, not "message gone" -- let it bubble
+            # up to _run_worker's flood-wait handling instead of failing
+            # the download outright.
+            raise
         except Exception as e:
             logger.error("Could not fetch source message: %s", e)
             return None

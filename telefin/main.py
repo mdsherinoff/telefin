@@ -7,7 +7,7 @@ from bot import build_client, register_handlers
 from config import Config
 from db import Database
 from events import EventBus
-from utils.telegram_helpers import ensure_directory, setup_logging
+from utils.telegram_helpers import cleanup_orphaned_partials, ensure_directory, setup_logging
 from webapp import create_app
 from worker import DownloadQueue
 
@@ -28,6 +28,10 @@ async def run() -> None:
 
     for path in config.all_download_dirs():
         ensure_directory(path)
+
+    removed_partials = cleanup_orphaned_partials(config.all_download_dirs())
+    if removed_partials:
+        logger.info("Removed %d orphaned .part file(s) from a previous crash", removed_partials)
 
     database = Database(config.db_path)
     await database.connect()

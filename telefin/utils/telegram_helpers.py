@@ -63,6 +63,29 @@ def ensure_directory(path: str) -> Path:
     return directory
 
 
+def cleanup_orphaned_partials(dirs: list[str]) -> int:
+    # Remove .part files left behind by a crash/restart mid-download. Safe
+    # to do unconditionally at startup: any download still in flight was
+    # just reset to failed (see Database.reset_interrupted), so nothing
+    # will resume from these files -- a retry re-downloads from scratch.
+    removed = 0
+
+    for directory in dirs:
+        path = Path(directory)
+
+        if not path.is_dir():
+            continue
+
+        for partial in path.glob("*.part"):
+            try:
+                partial.unlink()
+                removed += 1
+            except OSError as e:
+                logger.warning("Could not remove orphaned partial %s: %s", partial, e)
+
+    return removed
+
+
 def format_size(size_bytes: int) -> str:
     # Convert bytes to human-readable format.
     if size_bytes == 0:
@@ -80,18 +103,44 @@ def format_size(size_bytes: int) -> str:
     return f"{size:.2f} {size_names[i]}"
 
 
+def _get_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+
+    if not raw:
+        return default
+
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
 def setup_logging(level: str | None = None) -> None:
     if level is None:
         level = os.getenv("LOG_LEVEL", "INFO")
 
+    fmt = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+
+    # Bare (non-Docker) deployments often redirect stdout to a plain file,
+    # which grows forever. LOG_FILE opts into rotation on top of whatever's
+    # already capturing stdout (journald, Docker's log driver, etc.).
+    log_file = os.getenv("LOG_FILE")
+    if log_file:
+        from logging.handlers import RotatingFileHandler
+
+        handlers.append(
+            RotatingFileHandler(
+                log_file,
+                maxBytes=_get_int_env("LOG_MAX_BYTES", 10 * 1024 * 1024),
+                backupCount=_get_int_env("LOG_BACKUP_COUNT", 5),
+            )
+        )
+
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
-        format=(
-            "%(asctime)s | "
-            "%(levelname)s | "
-            "%(name)s | "
-            "%(message)s"
-        )
+        format=fmt,
+        handlers=handlers,
     )
 
 

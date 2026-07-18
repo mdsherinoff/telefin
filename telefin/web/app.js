@@ -20,8 +20,10 @@ const ICONS = {
   completed: svg(`<path d="M4 14.9A7 7 0 1 1 15.7 8h1.8a4.5 4.5 0 0 1 2.5 8.2"/><path d="m9 15 2 2 4-4"/>`),
   failed: svg(`<path d="m10.3 3.9-8.2 14.2a2 2 0 0 0 1.7 3h16.4a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>`),
   skipped: svg(`<path d="m5 4 10 8-10 8V4Z"/><path d="M19 5v14"/>`),
+  cancelled: svg(`<circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/>`),
   retry: svg(`<path d="M3 12a9 9 0 1 0 2.64-6.36"/><path d="M3 3v6h6"/>`, 15),
   remove: svg(`<path d="M18 6 6 18M6 6l12 12"/>`, 15),
+  stop: svg(`<rect x="6" y="6" width="12" height="12" rx="1"/>`, 15),
   gear: svg(`<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/>`, 15),
   sortDesc: `<svg class="sort-caret" viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="m7 10 5 6 5-6Z"/></svg>`,
 };
@@ -33,6 +35,7 @@ const STATUS_TITLES = {
   completed: "Completed",
   failed: "Failed",
   skipped: "Skipped — duplicate, already downloaded",
+  cancelled: "Cancelled by user",
 };
 
 const EMPTY_STATES = {
@@ -268,6 +271,8 @@ function renderRow(item) {
   if (retry) retry.onclick = () => retryItem(item.id);
   const del = row.querySelector("[data-action=delete]");
   if (del) del.onclick = () => deleteItem(item.id);
+  const cancel = row.querySelector("[data-action=cancel]");
+  if (cancel) cancel.onclick = () => cancelItem(item.id);
 
   return row;
 }
@@ -282,11 +287,11 @@ function statusTitle(item) {
 
 function renderActions(item) {
   const buttons = [];
-  if (["failed", "completed", "skipped"].includes(item.status)) {
+  if (["failed", "completed", "skipped", "cancelled"].includes(item.status)) {
     buttons.push(`<button class="icon-btn" data-action="retry" title="Retry">${ICONS.retry}</button>`);
-  }
-  if (item.status !== "downloading") {
     buttons.push(`<button class="icon-btn" data-action="delete" title="Remove from list">${ICONS.remove}</button>`);
+  } else if (["queued", "downloading"].includes(item.status)) {
+    buttons.push(`<button class="icon-btn" data-action="cancel" title="Cancel">${ICONS.stop}</button>`);
   }
   return buttons.join("");
 }
@@ -311,15 +316,19 @@ function setCount(id, value) {
 function updateToolbar() {
   const retryBtn = el("btn-retry-selected");
   const removeBtn = el("btn-remove-selected");
+  const cancelBtn = el("btn-cancel-selected");
   const showRetry = state.filter === "failed";
-  const showRemove = hasCheckboxes();
+  const showRemove = state.filter === "failed";
+  const showCancel = state.filter === "active";
 
   retryBtn.hidden = !showRetry;
   removeBtn.hidden = !showRemove;
-  el("toolbar-sep").hidden = !(showRetry || showRemove);
+  cancelBtn.hidden = !showCancel;
+  el("toolbar-sep").hidden = !(showRetry || showRemove || showCancel);
 
   retryBtn.disabled = state.selected.size === 0;
   removeBtn.disabled = state.selected.size === 0;
+  cancelBtn.disabled = state.selected.size === 0;
 }
 
 function syncCheckAll() {
@@ -395,6 +404,17 @@ async function deleteItem(id) {
   toast("Entry removed");
 }
 
+async function cancelItem(id) {
+  try {
+    const res = await fetch(`/api/downloads/${id}/cancel`, { method: "POST" });
+    if (!res.ok) throw new Error();
+    toast("Download cancelled");
+  } catch {
+    toast("Cancel failed", "error");
+  }
+  await refresh();
+}
+
 async function deleteQuietly(ids) {
   for (const id of ids) {
     try {
@@ -428,6 +448,20 @@ async function removeSelected() {
   if (!confirm(`Remove ${ids.length} entr${ids.length === 1 ? "y" : "ies"} from the list? Downloaded files (if any) are kept.`)) return;
   await deleteQuietly(ids);
   toast(`Removed ${ids.length} entr${ids.length === 1 ? "y" : "ies"}`);
+}
+
+async function cancelSelected() {
+  const ids = [...state.selected];
+  state.selected.clear();
+  for (const id of ids) {
+    try {
+      await fetch(`/api/downloads/${id}/cancel`, { method: "POST" });
+    } catch {
+      toast("Cancel failed", "error");
+    }
+  }
+  toast(`Cancelled ${ids.length} download(s)`);
+  await refresh();
 }
 
 // live socket
@@ -510,6 +544,7 @@ el("search").addEventListener("input", (e) => {
 el("btn-refresh").onclick = () => refresh();
 el("btn-retry-selected").onclick = () => retrySelected();
 el("btn-remove-selected").onclick = () => removeSelected();
+el("btn-cancel-selected").onclick = () => cancelSelected();
 
 document.querySelectorAll(".pager-btn").forEach((btn) => {
   btn.onclick = () => {
