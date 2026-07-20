@@ -19,16 +19,22 @@ So, this project uses a **userbot**; a script that logs into your personal Teleg
 - Downloads files directly to your server with no size limit
 - **Download queue** — files are processed in order, with a configurable concurrency limit instead of racing for bandwidth
 - **Live progress** — a progress bar with speed and ETA, both in your Telegram chat and on the web dashboard
-- **Web dashboard** (Radarr/Sonarr style) — active queue, history, stats, retry and remove, live over WebSocket
+- **Web dashboard** (Sonarr/Radarr style) — active queue, history, stats, retry/cancel/remove, live over WebSocket
+- **Settings page in the dashboard** — reconfigure Sonarr/Radarr, watch chat, download directories, retry/notify/retention tuning and more without SSH-ing in to edit `.env` by hand
+- **Separate movie/TV download directories** (optional) — point each at a different drive/mount so imports are an instant same-disk rename instead of a slow cross-disk copy
 - **SQLite history** — every download is recorded; survives restarts
-- **Duplicate detection** — a file you already downloaded is skipped
-- **Crash-safe** — downloads interrupted by a restart are marked failed and can be retried from the dashboard
+- **Duplicate detection** — a file you already downloaded is skipped (aware of movies vs. TV, so same-named files of different types never collide)
+- **Crash-safe** — downloads interrupted by a restart are marked failed and can be retried from the dashboard; orphaned partial downloads are swept on startup
+- **Automatic retry** with backoff on transient failures, including Telegram rate-limit (flood-wait) handling
+- **Periodic re-notify** — if Sonarr/Radarr didn't pick up a completed download (e.g. it wasn't requested through Seerr/Overseerr), TeleFin automatically re-announces it on an interval, plus a manual "notify" button per item
+- **Optional history retention** — auto-delete old completed/failed records after N days
+- **Per-drive disk space** shown right in the dashboard sidebar
 - Restricts downloads to allowed Telegram user IDs
 - Auto-detects media type and triggers:
   - Sonarr for TV shows (`S01E01` / `1x01` naming)
   - Radarr for movies
 - Jellyfin picks up new files automatically
-- Runs as a `systemd` service
+- Runs as a `systemd` service or in Docker
 - Tested on Proxmox Ubuntu LXC
 
 ---
@@ -75,7 +81,10 @@ telefin/
 ## Running with Docker (recommended)
 
 The whole stack ships as a single container. A `docker-compose.yml` is
-included at the repo root.
+included at the repo root, and builds the image locally by default. To use
+the pre-built image from Docker Hub instead (faster, no local build step),
+edit `docker-compose.yml` and replace the `build: ./telefin` line with
+`image: xherxn/telefin:latest`.
 
 ### 1. Configure
 
@@ -221,6 +230,13 @@ RADARR_URL=http://localhost:7878
 RADARR_API_KEY=your_radarr_api_key
 ```
 
+Everything else in `.env.example` (retry/backoff tuning, re-notify interval,
+history retention, log rotation, and the optional `DOWNLOAD_DIR_MOVIES` /
+`DOWNLOAD_DIR_TV` split for running movies and TV shows off separate
+drives) has a sensible default — leave it alone for now. Once TeleFin is
+running, all of it can be changed from **Dashboard → Settings** instead of
+editing this file again (see [Settings Page](#settings-page) below).
+
 ---
 
 ## Step 7 — Create Media Directories
@@ -302,10 +318,15 @@ http://YOUR_SERVER_IP:8420
 You get a Sonarr/Radarr-style interface (dark theme, sidebar navigation,
 flat table) with:
 
-- **Queue** — files currently downloading, with live progress, speed and ETA
-- **History** — everything downloaded, with the Sonarr/Radarr result
+- **Queue** — files currently downloading, with live progress, speed and ETA;
+  cancel a queued or in-progress download without losing its history
+- **History** — everything downloaded, with the Sonarr/Radarr result and a
+  manual **Notify** button to re-announce a completed download that Sonarr/
+  Radarr never picked up
 - **Failed** — anything that errored, with a one-click **Retry**
-- Live stats (active / completed / failed / total downloaded)
+- **Settings** — see below
+- Live stats (active / completed / failed / total downloaded) and free space
+  per configured drive
 - Filename filter box and live page counters
 
 The dashboard updates in real time over a WebSocket — no refreshing needed.
@@ -321,6 +342,31 @@ WEB_PASSWORD=a_long_random_password
 
 Leave them blank for open LAN-only access. You can also change the port
 (`WEB_PORT`) or disable the dashboard entirely (`WEB_ENABLED=false`).
+
+---
+
+## Settings Page
+
+`Dashboard → Settings` lets you view and edit most of `.env` from the
+browser instead of SSH-ing in — grouped into **Basic** (chat/watch config,
+download directories, Sonarr/Radarr URLs and API keys) and an **Advanced**
+section (retry/backoff, re-notify interval, history retention, log
+settings, the web server's own host/port/credentials). Secret fields
+(API hash, API keys, dashboard password) are masked with a show/hide
+toggle.
+
+**What it can't do:** your Telegram API credentials and the one-time
+interactive login can't be set up this way — the dashboard itself doesn't
+start until those are already valid in `.env` (see
+[Step 6](#step-6--create-env) and [Step 8](#step-8--first-run-interactive-login)),
+and the Telegram login prompt (phone number, confirmation code) only works
+in a terminal. Everything else, once TeleFin is running for the first time,
+is fair game from this page.
+
+**Changes require a restart.** Saving writes straight to `.env`, but nothing
+hot-reloads — the page tells you this after saving. Restart the same way you
+would after any other config change (see [Updating](#updating) below for the
+exact commands).
 
 ---
 

@@ -13,9 +13,12 @@ downloads it, hands it to Sonarr/Radarr, and Jellyfin picks it up.
 
 - No file size limit (up to 4 GB per file)
 - Download queue with live progress in Telegram + a web dashboard
-- Auto-detects TV vs. movie and notifies Sonarr / Radarr
+- Auto-detects TV vs. movie and notifies Sonarr / Radarr, with automatic
+  re-notify if a completed download never got picked up
 - Watch your Saved Messages **or** a group of allowed users
 - SQLite history, duplicate detection, crash-safe restarts
+- Reconfigure most settings from the dashboard's Settings page instead of
+  editing `.env` by hand
 - Restricts downloads to allowed Telegram user IDs
 
 ## Quick start
@@ -65,4 +68,4 @@ Set these in a `.env` file (see `.env.example` in the repo):
 
 Built for `linux/amd64` and `linux/arm64`.
 
-📖 Full docs & source: <your GitHub repo link>
+📖 Full docs & source: https://github.com/mdsherinoff/telefin
