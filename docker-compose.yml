@@ -2,13 +2,13 @@ name: telefin
 
 services:
   telefin:
-    build: ./telefin
+    build: .
     image: telefin:latest
     container_name: telefin
     restart: unless-stopped
 
     env_file:
-      - ./telefin/.env
+      - ./.env
 
     environment:
       SESSION_NAME: /config/userbot_session

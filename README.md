@@ -83,14 +83,14 @@ telefin/
 The whole stack ships as a single container. A `docker-compose.yml` is
 included at the repo root, and builds the image locally by default. To use
 the pre-built image from Docker Hub instead (faster, no local build step),
-edit `docker-compose.yml` and replace the `build: ./telefin` line with
+edit `docker-compose.yml` and replace the `build: .` line with
 `image: xherxn/telefin:latest`.
 
 ### 1. Configure
 
 ```bash
-cp telefin/.env.example telefin/.env
-nano telefin/.env          # fill in API creds, ALLOWED_USERS, *arr keys
+cp .env.example .env
+nano .env          # fill in API creds, ALLOWED_USERS, *arr keys
 ```
 
 Two things that matter for Docker specifically:
@@ -179,9 +179,6 @@ Save your numeric user ID, for example `123456789`.
 git clone https://github.com/mdsherinoff/telefin.git /opt/telefin
 ```
 
-> **Note:** the application code lives in the inner `telefin/` folder, so all
-> the following steps happen in `/opt/telefin/telefin`.
-
 ---
 
 ## Step 4 — Install Python venv
@@ -195,7 +192,7 @@ apt install python3.12-venv -y
 ## Step 5 — Create Virtual Environment and Install Dependencies
 
 ```bash
-cd /opt/telefin/telefin
+cd /opt/telefin
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -208,7 +205,7 @@ pip install -r requirements.txt
 Copy the example file and fill in your values:
 
 ```bash
-cd /opt/telefin/telefin
+cd /opt/telefin
 cp .env.example .env
 nano .env
 ```
@@ -252,7 +249,7 @@ mkdir -p /srv/media/incoming /srv/media/movies /srv/media/tv
 The first run requires an interactive login. Telethon will ask for your phone number and the confirmation code Telegram sends you. **This only needs to be done once.**
 
 ```bash
-cd /opt/telefin/telefin
+cd /opt/telefin
 source venv/bin/activate
 python main.py
 ```
@@ -276,7 +273,7 @@ Once signed in, stop the process with `Ctrl+C` and move on to the next step.
 Copy the service file:
 
 ```bash
-cp /opt/telefin/telefin/services/telefin.service /etc/systemd/system/telefin.service
+cp /opt/telefin/services/telefin.service /etc/systemd/system/telefin.service
 ```
 
 The service file has `User=root` set and expects the repo at `/opt/telefin`. If you cloned somewhere else or want to run as a different user, edit it first:
@@ -471,7 +468,7 @@ docker compose up -d --build
 ```bash
 cd /opt/telefin          # wherever you cloned the repo
 git pull
-telefin/venv/bin/pip install -r telefin/requirements.txt
+venv/bin/pip install -r requirements.txt
 systemctl restart telefin
 ```
 

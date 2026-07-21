@@ -6,8 +6,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/telefin/telefin
-ExecStart=/opt/telefin/telefin/venv/bin/python main.py
+WorkingDirectory=/opt/telefin
+ExecStart=/opt/telefin/venv/bin/python main.py
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1

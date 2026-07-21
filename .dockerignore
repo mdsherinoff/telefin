@@ -1,5 +1,6 @@
 venv/
 __pycache__/
+.pytest_cache/
 *.pyc
 *.session
 *.session-journal
@@ -8,4 +9,11 @@ __pycache__/
 *.db-wal
 *.db-shm
 .git
+.github/
 .DS_Store
+tests/
+services/
+docker-compose.yml
+README.md
+DOCKERHUB.md
+LICENSE
