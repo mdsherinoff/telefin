@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from dotenv import load_dotenv
 
+from utils.schedule import parse_hhmm
+
 # The .env file next to this module -- the single source of truth for both
 # the startup config load and the web dashboard's Settings page, regardless
 # of the process's current working directory.
@@ -36,6 +38,13 @@ def _get_int(name: str, default: int) -> int:
         return int(raw)
     except ValueError:
         return default
+
+def _get_time(name: str) -> str | None:
+    # HH:MM (24h), or None when unset/invalid so a typo can't lock
+    # downloads out forever.
+    raw = (os.getenv(name) or "").strip()
+
+    return raw if parse_hhmm(raw) is not None else None
 
 def _parse_extensions(raw: str) -> set[str]:
     extensions = set()
@@ -113,6 +122,12 @@ class Config:
     web_username: str | None
     web_password: str | None
 
+    # Download window / bandwidth. Defaults keep the old behaviour
+    # (download any time, unlimited speed).
+    download_window_start: str | None = None
+    download_window_end: str | None = None
+    max_download_speed_kbps: int = 0
+
     @classmethod
     def from_env(cls) -> "Config":
         raw_extensions = os.getenv("ALLOWED_EXTENSIONS", "")
@@ -147,6 +162,9 @@ class Config:
             web_port=_get_int("WEB_PORT", 8420),
             web_username=os.getenv("WEB_USERNAME") or None,
             web_password=os.getenv("WEB_PASSWORD") or None,
+            download_window_start=_get_time("DOWNLOAD_WINDOW_START"),
+            download_window_end=_get_time("DOWNLOAD_WINDOW_END"),
+            max_download_speed_kbps=max(0, _get_int("MAX_DOWNLOAD_SPEED_KBPS", 0)),
         )
 
     def download_dir_for(self, media_type: str) -> str:
@@ -184,6 +202,12 @@ class Config:
                 "ALLOWED_USERS is empty, so every message would be ignored. "
                 "Message https://t.me/userinfobot on Telegram to get your "
                 "numeric user ID and set ALLOWED_USERS=<that id> in .env."
+            )
+
+        if bool(self.download_window_start) != bool(self.download_window_end):
+            problems.append(
+                "DOWNLOAD_WINDOW_START and DOWNLOAD_WINDOW_END must both be "
+                "set (as HH:MM) or both be blank."
             )
 
         if problems:

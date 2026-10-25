@@ -6,6 +6,7 @@ const state = {
   page: 1,
   items: new Map(),    
   selected: new Set(),
+  queue: { paused: false, in_window: true },
 };
 
 const el = (id) => document.getElementById(id);
@@ -31,6 +32,9 @@ const ICONS = {
   notify: fa("0 0 448 512", `<path d="M224 512c35.32 0 63.97-28.65 63.97-64H160.03c0 35.35 28.65 64 63.97 64zm215.39-149.71c-19.32-20.76-55.47-51.99-55.47-154.29 0-77.7-54.48-139.9-127.94-155.16V32c0-17.67-14.32-32-31.98-32s-31.98 14.33-31.98 32v20.84C118.56 68.1 64.08 130.3 64.08 208c0 102.3-36.15 133.53-55.47 154.29-6 6.45-8.66 14.16-8.61 21.71.11 16.4 12.98 32 32.1 32h383.8c19.12 0 32-15.6 32.1-32 .05-7.55-2.61-15.27-8.61-21.71z"/>`, 15),
   gear: fa("0 0 512 512", `<path d="M464 32H48C21.49 32 0 53.49 0 80v352c0 26.51 21.49 48 48 48h416c26.51 0 48-21.49 48-48V80c0-26.51-21.49-48-48-48zM224 416H64v-96h160v96zm0-160H64v-96h160v96zm224 160H288v-96h160v96zm0-160H288v-96h160v96z"/>`, 15),
   sortDesc: `<svg class="sort-caret" viewBox="0 0 320 512" width="12" height="12" fill="currentColor"><path d="M31.3 192h257.3c17.8 0 26.7 21.5 14.1 34.1L174.1 354.8c-7.8 7.8-20.5 7.8-28.3 0L17.2 226.1C4.6 213.5 13.5 192 31.3 192z"/></svg>`,
+  pause: fa("0 0 448 512", `<path d="M144 479H48c-26.5 0-48-21.5-48-48V79c0-26.5 21.5-48 48-48h96c26.5 0 48 21.5 48 48v352c0 26.5-21.5 48-48 48zm304-48V79c0-26.5-21.5-48-48-48h-96c-26.5 0-48 21.5-48 48v352c0 26.5 21.5 48 48 48h96c26.5 0 48-21.5 48-48z"/>`),
+  play: fa("0 0 448 512", `<path d="M424.4 214.7L72.4 6.6C43.8-10.3 0 6.1 0 47.9V464c0 37.5 40.7 60.1 72.4 41.3l352-208c31.4-18.5 31.5-64.1 0-82.6z"/>`),
+  top: fa("0 0 448 512", `<path d="M34.9 289.5l-22.2-22.2c-9.4-9.4-9.4-24.6 0-33.9L207 39c9.4-9.4 24.6-9.4 33.9 0l194.3 194.3c9.4 9.4 9.4 24.6 0 33.9L413 289.4c-9.5 9.5-25 9.3-34.3-.4L264 168.6V456c0 13.3-10.7 24-24 24h-32c-13.3 0-24-10.7-24-24V168.6L69.2 289.1c-9.3 9.8-24.8 10-34.3.4z"/>`),
   eye: fa("0 0 576 512", `<path d="M288 144a110.94 110.94 0 0 0-31.24 5 55.4 55.4 0 0 1 7.24 27 56 56 0 0 1-56 56 55.4 55.4 0 0 1-27-7.24A111.71 111.71 0 1 0 288 144zm284.52 97.4C518.29 135.59 410.93 64 288 64S57.68 135.64 3.48 241.41a32.35 32.35 0 0 0 0 29.19C57.71 376.41 165.07 448 288 448s230.32-71.64 284.52-177.41a32.35 32.35 0 0 0 0-29.19zM288 400c-98.65 0-189.09-55-237.93-144C98.91 167 189.34 112 288 112s189.09 55 237.93 144C477.1 345 386.66 400 288 400z"/>`, 15),
   eyeSlash: fa("0 0 640 512", `<path d="M634 471L36 3.51A16 16 0 0 0 13.51 6l-10 12.49A16 16 0 0 0 6 41l598 467.49a16 16 0 0 0 22.49-2.49l10-12.49A16 16 0 0 0 634 471zM296.79 146.47l134.79 105.38C429.36 191.91 380.48 144 320 144a112.26 112.26 0 0 0-23.21 2.47zm46.42 219.07L208.42 260.16C210.65 320.09 259.53 368 320 368a113 113 0 0 0 23.21-2.46zM320 112c98.65 0 189.09 55 237.93 144a285.53 285.53 0 0 1-44 60.2l37.74 29.5a333.7 333.7 0 0 0 52.9-75.11 32.35 32.35 0 0 0 0-29.19C550.29 135.59 442.93 64 320 64c-36.7 0-71.71 7-104.63 18.81l46.41 36.29c18.94-4.3 38.34-7.1 58.22-7.1zm0 288c-98.65 0-189.08-55-237.93-144a285.47 285.47 0 0 1 44.05-60.19l-37.74-29.5a333.6 333.6 0 0 0-52.89 75.1 32.35 32.35 0 0 0 0 29.19C89.72 376.41 197.08 448 320 448c36.7 0 71.71-7.05 104.63-18.81l-46.41-36.28C359.28 397.2 339.89 400 320 400z"/>`, 15),
 };
@@ -57,6 +61,9 @@ const SETTINGS_SCHEMA = [
   { key: "ALLOWED_EXTENSIONS", label: "Allowed Extensions", type: "text", group: "advanced", help: "Comma-separated, e.g. mkv,mp4,avi" },
   { key: "DB_PATH", label: "Database Path", type: "text", group: "advanced" },
   { key: "NOTIFY_INTERVAL_MINUTES", label: "Re-notify Interval (min)", type: "text", group: "advanced", help: "Re-announce stuck completed downloads to Sonarr/Radarr. 0 disables." },
+  { key: "DOWNLOAD_WINDOW_START", label: "Download Window Start", type: "text", group: "advanced", help: "HH:MM (24h). Only start downloads between start and end, e.g. 01:00. Blank = any time." },
+  { key: "DOWNLOAD_WINDOW_END", label: "Download Window End", type: "text", group: "advanced", help: "HH:MM (24h), e.g. 07:00. A window may cross midnight (22:00 → 06:00)." },
+  { key: "MAX_DOWNLOAD_SPEED_KBPS", label: "Max Download Speed (KB/s)", type: "text", group: "advanced", help: "Per download. 0 = unlimited." },
   { key: "RETENTION_DAYS", label: "History Retention (days)", type: "text", group: "advanced", help: "Auto-delete finished history older than this. 0 disables." },
   { key: "WEB_ENABLED", label: "Web Dashboard Enabled", type: "checkbox", group: "advanced" },
   { key: "WEB_HOST", label: "Web Host", type: "text", group: "advanced" },
@@ -153,7 +160,9 @@ function visibleItems() {
   return [...state.items.values()]
     .filter(matchesFilter)
     .sort((a, b) =>
-      state.filter === "active" ? a.id - b.id : b.id - a.id
+      state.filter === "active"
+        ? (b.priority || 0) - (a.priority || 0) || a.id - b.id
+        : b.id - a.id
     );
 }
 
@@ -296,7 +305,7 @@ function renderRow(item) {
     <td class="title-cell">
       <div class="title-text" title="${escapeHtml(item.filename)}">${escapeHtml(item.filename)}</div>
     </td>
-    <td class="col-type"><span class="tag ${item.media_type === "tv" ? "tag-tv" : "tag-movie"}">${item.media_type === "tv" ? "TV" : "Movie"}</span></td>
+    <td class="col-type"><span class="tag ${item.media_type === "tv" ? "tag-tv" : "tag-movie"}">${item.media_type === "tv" ? "TV" : "Movie"}</span>${importTag(item)}</td>
     ${cols}
     <td class="col-gear"><div class="actions">${renderActions(item)}</div></td>
   `;
@@ -316,10 +325,19 @@ function renderRow(item) {
   if (del) del.onclick = () => deleteItem(item.id);
   const cancel = row.querySelector("[data-action=cancel]");
   if (cancel) cancel.onclick = () => cancelItem(item.id);
+  const prioritize = row.querySelector("[data-action=prioritize]");
+  if (prioritize) prioritize.onclick = () => prioritizeItem(item.id);
   const notify = row.querySelector("[data-action=notify]");
   if (notify) notify.onclick = () => notifyItem(item.id);
 
   return row;
+}
+
+function importTag(item) {
+  if (item.status !== "completed" || !item.import_status) return "";
+  return item.import_status === "imported"
+    ? ` <span class="tag tag-imported" title="Sonarr/Radarr imported this file">Imported</span>`
+    : ` <span class="tag tag-pending" title="Waiting for Sonarr/Radarr to import this file">Awaiting import</span>`;
 }
 
 function statusTitle(item) {
@@ -339,6 +357,9 @@ function renderActions(item) {
     buttons.push(`<button class="icon-btn" data-action="retry" title="Retry">${ICONS.retry}</button>`);
     buttons.push(`<button class="icon-btn" data-action="delete" title="Remove from list">${ICONS.remove}</button>`);
   } else if (["queued", "downloading"].includes(item.status)) {
+    if (item.status === "queued") {
+      buttons.push(`<button class="icon-btn" data-action="prioritize" title="Move to top of queue">${ICONS.top}</button>`);
+    }
     buttons.push(`<button class="icon-btn" data-action="cancel" title="Cancel">${ICONS.stop}</button>`);
   }
   return buttons.join("");
@@ -568,7 +589,7 @@ async function loadItems() {
 
 async function refresh() {
   try {
-    await Promise.all([loadItems(), loadStats(), loadConfig()]);
+    await Promise.all([loadItems(), loadStats(), loadConfig(), loadQueueState()]);
   } catch (e) {
     toast("Could not reach the server", "error");
   }
@@ -600,6 +621,53 @@ async function cancelItem(id) {
     toast("Cancel failed", "error");
   }
   await refresh();
+}
+
+async function prioritizeItem(id) {
+  try {
+    const res = await fetch(`/api/downloads/${id}/prioritize`, { method: "POST" });
+    if (!res.ok) throw new Error();
+    toast("Moved to the top of the queue");
+  } catch {
+    toast("Could not reprioritize", "error");
+  }
+  await refresh();
+}
+
+function renderQueueState() {
+  const q = state.queue;
+  const btn = el("btn-pause");
+  btn.querySelector(".toolbar-label").textContent = q.paused ? "Resume" : "Pause";
+  btn.querySelector(".toolbar-icon").innerHTML = q.paused ? ICONS.play : ICONS.pause;
+
+  const banner = el("queue-banner");
+  let text = "";
+  if (q.paused) {
+    text = "Queue is paused — no new downloads will start until you resume.";
+  } else if (!q.in_window) {
+    text = `Outside the download window (${q.window_start}–${q.window_end}) — queued files will start when it opens.`;
+  }
+  banner.hidden = !text;
+  banner.textContent = text;
+}
+
+async function loadQueueState() {
+  const res = await fetch("/api/queue");
+  state.queue = await res.json();
+  renderQueueState();
+}
+
+async function togglePause() {
+  const action = state.queue.paused ? "resume" : "pause";
+  try {
+    const res = await fetch(`/api/queue/${action}`, { method: "POST" });
+    if (!res.ok) throw new Error();
+    state.queue = await res.json();
+    renderQueueState();
+    toast(action === "pause" ? "Queue paused" : "Queue resumed");
+  } catch {
+    toast(`Could not ${action} the queue`, "error");
+  }
 }
 
 async function notifyItem(id) {
@@ -687,6 +755,9 @@ function connect() {
       state.items.set(msg.download.id, msg.download);
       render();
       loadStats();
+    } else if (msg.type === "queue") {
+      state.queue = msg;
+      renderQueueState();
     } else if (msg.type === "progress") {
       const item = state.items.get(msg.id);
       if (item) {
@@ -755,6 +826,7 @@ el("search").addEventListener("input", (e) => {
 });
 
 el("btn-refresh").onclick = () => refresh();
+el("btn-pause").onclick = () => togglePause();
 el("btn-retry-selected").onclick = () => retrySelected();
 el("btn-remove-selected").onclick = () => removeSelected();
 el("btn-cancel-selected").onclick = () => cancelSelected();
@@ -776,4 +848,5 @@ document.querySelectorAll(".pager-btn").forEach((btn) => {
 refresh();
 connect();
 setInterval(loadStats, 15000);
+setInterval(() => loadQueueState().catch(() => {}), 60000);
 setInterval(render, 30000);

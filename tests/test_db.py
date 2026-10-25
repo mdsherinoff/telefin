@@ -137,3 +137,48 @@ class TestDeleteOldDownloads:
 
         assert removed == 1
         assert remaining is None
+
+
+class TestPriorityAndMigration:
+    def test_promoted_download_sorts_first_in_active_list(self, tmp_path):
+        async def scenario():
+            database = Database(str(tmp_path / "t.db"))
+            await database.connect()
+            ids = []
+            for name in ("a.mkv", "b.mkv"):
+                row = await database.create_download(
+                    filename=name, safe_filename=name, media_type="movie",
+                    dest_path=f"/x/{name}", sender_id=1, chat_id=1, message_id=1,
+                )
+                ids.append(row["id"])
+            await database.promote_download(ids[1])
+            listed = await database.list_downloads(active=True)
+            await database.close()
+            return [r["id"] for r in listed], ids
+
+        listed, ids = asyncio.run(scenario())
+        assert listed == [ids[1], ids[0]]
+
+    def test_old_database_gets_new_columns(self, tmp_path):
+        import sqlite3
+        path = str(tmp_path / "old.db")
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE downloads (id INTEGER PRIMARY KEY, filename TEXT NOT NULL, "
+                     "safe_filename TEXT NOT NULL, size INTEGER NOT NULL DEFAULT 0, "
+                     "downloaded INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'queued', "
+                     "media_type TEXT NOT NULL DEFAULT 'unknown', dest_path TEXT, error TEXT, "
+                     "arr_result TEXT, sender_id INTEGER, chat_id INTEGER, message_id INTEGER, "
+                     "created_at TEXT NOT NULL, started_at TEXT, completed_at TEXT)")
+        conn.commit()
+        conn.close()
+
+        async def scenario():
+            database = Database(path)
+            await database.connect()
+            cursor = await database._conn.execute("PRAGMA table_info(downloads)")
+            cols = {r["name"] for r in await cursor.fetchall()}
+            await database.close()
+            return cols
+
+        cols = asyncio.run(scenario())
+        assert {"priority", "import_status"} <= cols

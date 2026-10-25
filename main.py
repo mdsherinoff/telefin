@@ -64,6 +64,17 @@ async def run() -> None:
                 loop="asyncio",
             )
         )
+        if not (config.web_username and config.web_password) and config.web_host not in (
+            "127.0.0.1", "localhost", "::1",
+        ):
+            logger.warning(
+                "The web dashboard is listening on %s with NO login. Anyone who "
+                "can reach port %d can control TeleFin and read your API keys. "
+                "Set WEB_USERNAME and WEB_PASSWORD (or bind WEB_HOST=127.0.0.1 "
+                "behind a reverse proxy).",
+                config.web_host, config.web_port,
+            )
+
         host_hint = (
             "localhost"
             if config.web_host in ("0.0.0.0", "::")

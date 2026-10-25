@@ -29,6 +29,9 @@ So, this project uses a **userbot**; a script that logs into your personal Teleg
 - **Periodic re-notify** — if Sonarr/Radarr didn't pick up a completed download (e.g. it wasn't requested through Seerr/Overseerr), TeleFin automatically re-announces it on an interval, plus a manual "notify" button per item
 - **Optional history retention** — auto-delete old completed/failed records after N days
 - **Per-drive disk space** shown right in the dashboard sidebar
+- **Pause / resume and priority** — pause the queue from the dashboard, or move a queued item to the top
+- **Download window and speed limit** — only start downloads during set hours (e.g. overnight) and cap bandwidth per download
+- **Import status** — completed downloads show *Imported* or *Awaiting import*, confirmed against Sonarr/Radarr's history
 - Restricts downloads to allowed Telegram user IDs
 - Auto-detects media type and triggers:
   - Sonarr for TV shows (`S01E01` / `1x01` naming)

@@ -258,6 +258,8 @@ td.col-error div {
    solid border+background in a color tied to the tag's meaning. */
 .tag.tag-movie { background: var(--torrent); border-color: var(--torrent); }
 .tag.tag-tv { background: var(--usenet); border-color: var(--usenet); }
+.tag.tag-imported { background: var(--success); border-color: var(--success); margin-left: 4px; }
+.tag.tag-pending { background: transparent; border-color: var(--amber); color: var(--amber); margin-left: 4px; }
 
 .progress {
   position: relative;

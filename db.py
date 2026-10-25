@@ -35,7 +35,9 @@ CREATE TABLE IF NOT EXISTS downloads (
     message_id    INTEGER,
     created_at    TEXT    NOT NULL,
     started_at    TEXT,
-    completed_at  TEXT
+    completed_at  TEXT,
+    priority      INTEGER NOT NULL DEFAULT 0,
+    import_status TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_downloads_status ON downloads(status);
@@ -56,9 +58,25 @@ class Database:
 
         await self._conn.execute("PRAGMA journal_mode=WAL;")
         await self._conn.executescript(SCHEMA)
+        await self._migrate()
         await self._conn.commit()
 
         logger.info("Database ready at %s", self.path)
+
+    async def _migrate(self) -> None:
+        # CREATE TABLE IF NOT EXISTS leaves databases from older versions
+        # without newer columns, so add whatever is missing.
+        cursor = await self._conn.execute("PRAGMA table_info(downloads)")
+        existing = {row["name"] for row in await cursor.fetchall()}
+
+        for column, ddl in (
+            ("priority", "INTEGER NOT NULL DEFAULT 0"),
+            ("import_status", "TEXT"),
+        ):
+            if column not in existing:
+                await self._conn.execute(
+                    f"ALTER TABLE downloads ADD COLUMN {column} {ddl}"
+                )
 
     async def close(self) -> None:
         if self._conn is not None:
@@ -137,7 +155,9 @@ class Database:
         if clauses:
             query += " WHERE " + " AND ".join(clauses)
 
-        query += " ORDER BY id ASC" if active else " ORDER BY id DESC"
+        query += (
+            " ORDER BY priority DESC, id ASC" if active else " ORDER BY id DESC"
+        )
         query += " LIMIT ?"
         params.append(limit)
 
@@ -145,6 +165,19 @@ class Database:
         rows = await cursor.fetchall()
 
         return [dict(row) for row in rows]
+
+    async def promote_download(self, download_id: int) -> None:
+        # Puts a download ahead of everything else queued by giving it a
+        # priority above the current maximum.
+        await self._conn.execute(
+            """
+            UPDATE downloads
+            SET priority = (SELECT COALESCE(MAX(priority), 0) + 1 FROM downloads)
+            WHERE id = ?
+            """,
+            (download_id,),
+        )
+        await self._conn.commit()
 
     async def find_completed_duplicate(
         self,

@@ -25,6 +25,7 @@ import db
 from config import ENV_PATH, Config
 from db import Database
 from events import EventBus
+from utils.schedule import parse_hhmm
 from worker import DownloadQueue, Job
 
 logger = logging.getLogger(__name__)
@@ -42,13 +43,15 @@ SETTINGS_KEYS = {
     "MAX_DOWNLOAD_RETRIES", "RETRY_BACKOFF_SECONDS", "ALLOWED_EXTENSIONS",
     "DB_PATH", "NOTIFY_INTERVAL_MINUTES", "RETENTION_DAYS",
     "WEB_ENABLED", "WEB_HOST", "WEB_PORT", "WEB_USERNAME", "WEB_PASSWORD",
+    "DOWNLOAD_WINDOW_START", "DOWNLOAD_WINDOW_END", "MAX_DOWNLOAD_SPEED_KBPS",
     "LOG_LEVEL", "LOG_FILE", "LOG_MAX_BYTES", "LOG_BACKUP_COUNT",
 }
 
 SETTINGS_NUMERIC_KEYS = {
     "TELEGRAM_API_ID", "MAX_CONCURRENT_DOWNLOADS", "PROGRESS_INTERVAL",
     "MAX_DOWNLOAD_RETRIES", "RETRY_BACKOFF_SECONDS", "WEB_PORT",
-    "NOTIFY_INTERVAL_MINUTES", "RETENTION_DAYS", "LOG_MAX_BYTES",
+    "NOTIFY_INTERVAL_MINUTES", "RETENTION_DAYS", "MAX_DOWNLOAD_SPEED_KBPS",
+    "LOG_MAX_BYTES",
     "LOG_BACKUP_COUNT",
 }
 
@@ -169,6 +172,7 @@ def create_app(
             "allowed_extensions": sorted(config.allowed_extensions),
             "sonarr_configured": bool(config.sonarr_url and config.sonarr_api_key),
             "radarr_configured": bool(config.radarr_url and config.radarr_api_key),
+            "auth_enabled": bool(config.web_username and config.web_password),
         }
 
     @app.get("/api/settings")
@@ -196,6 +200,15 @@ def create_app(
                 raise HTTPException(
                     status_code=400,
                     detail=f"{key} must be a number, got: {value!r}",
+                )
+
+        for key in ("DOWNLOAD_WINDOW_START", "DOWNLOAD_WINDOW_END"):
+            value = str(payload.get(key, "")).strip()
+
+            if value and parse_hhmm(value) is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{key} must be a time like 23:30, got: {value!r}",
                 )
 
         for key, value in payload.items():
@@ -255,6 +268,35 @@ def create_app(
                 status_code=409,
                 detail=f"Cannot cancel a {record['status']} download",
             )
+
+        return {"ok": True}
+
+    @app.get("/api/queue")
+    async def queue_state(_: None = Depends(check_auth)) -> dict:
+        return queue.state()
+
+    @app.post("/api/queue/pause")
+    async def pause_queue(_: None = Depends(check_auth)) -> dict:
+        queue.pause()
+        return queue.state()
+
+    @app.post("/api/queue/resume")
+    async def resume_queue(_: None = Depends(check_auth)) -> dict:
+        queue.resume()
+        return queue.state()
+
+    @app.post("/api/downloads/{download_id}/prioritize")
+    async def prioritize(
+        download_id: int,
+        _: None = Depends(check_auth),
+    ) -> dict:
+        record = await database.get_download(download_id)
+
+        if not record:
+            raise HTTPException(status_code=404, detail="Not found")
+
+        if not await queue.promote(download_id):
+            raise HTTPException(status_code=409, detail="No longer queued")
 
         return {"ok": True}
 

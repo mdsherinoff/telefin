@@ -163,6 +163,92 @@ class TestFloodWaitRetry:
         asyncio.run(queue._retry_after_flood_wait(job, error))
 
         assert fake_db._rows[record["id"]]["status"] == db.STATUS_QUEUED
-        requeued = queue._queue.get_nowait()
+        _, _, requeued = queue._queue.get_nowait()
         assert requeued.download_id == record["id"]
         assert requeued.attempt == 1  # unchanged -- flood-wait isn't a failure
+
+
+class TestPauseAndPromote:
+    def test_promoted_job_runs_before_earlier_ones(self):
+        async def scenario():
+            queue, fake_db = make_queue()
+            fake_db.promote_calls = []
+
+            async def promote_download(download_id):
+                fake_db.promote_calls.append(download_id)
+
+            fake_db.promote_download = promote_download
+            first = fake_db.add(status=db.STATUS_QUEUED, filename="a.mkv")
+            second = fake_db.add(status=db.STATUS_QUEUED, filename="b.mkv")
+            await queue.enqueue(Job(first["id"]))
+            await queue.enqueue(Job(second["id"]))
+
+            assert await queue.promote(second["id"])
+
+            _, _, job = await queue._queue.get()
+            return job.download_id, second["id"]
+
+        got, expected = asyncio.run(scenario())
+        assert got == expected
+
+    def test_promote_rejects_non_queued(self):
+        queue, fake_db = make_queue()
+        record = fake_db.add(status=db.STATUS_DOWNLOADING, filename="a.mkv")
+
+        assert asyncio.run(queue.promote(record["id"])) is False
+
+    def test_pause_blocks_gate_until_resume(self):
+        async def scenario():
+            queue, _ = make_queue()
+            queue.pause()
+            waiter = asyncio.create_task(queue._wait_until_allowed())
+            await asyncio.sleep(0.05)
+            blocked = not waiter.done()
+            queue.resume()
+            await asyncio.wait_for(waiter, timeout=1)
+            return blocked
+
+        assert asyncio.run(scenario()) is True
+
+    def test_state_reports_window(self):
+        queue, _ = make_queue()
+        queue.config.download_window_start = "00:00"
+        queue.config.download_window_end = "00:00"  # equal -> always open
+
+        assert queue.state()["in_window"] is True
+        assert queue.state()["paused"] is False
+
+
+class TestThrottle:
+    def test_unlimited_has_no_delay(self):
+        from worker import _ProgressTracker
+        assert _ProgressTracker(5).throttle_delay(10**9, 0) == 0.0
+
+    def test_delay_when_ahead_of_limit(self):
+        from worker import _ProgressTracker
+        # 10 MB already "downloaded" instantly at a 1 MB/s cap -> ~10s wait.
+        delay = _ProgressTracker(5).throttle_delay(10 * 1024 * 1024, 1024 * 1024)
+        assert 9 < delay <= 10
+
+
+class TestCheckImports:
+    def test_marks_imported_when_file_gone_and_pending_when_present(self, tmp_path):
+        async def scenario():
+            queue, fake_db = make_queue()
+            present = tmp_path / "here.mkv"
+            present.write_text("x")
+            gone = fake_db.add(
+                status=db.STATUS_COMPLETED, media_type="movie",
+                dest_path=str(tmp_path / "gone.mkv"), import_status="pending",
+            )
+            here = fake_db.add(
+                status=db.STATUS_COMPLETED, media_type="movie",
+                dest_path=str(present), import_status=None,
+            )
+            await queue._check_imports()
+            return (await fake_db.get_download(gone["id"]),
+                    await fake_db.get_download(here["id"]))
+
+        gone, here = asyncio.run(scenario())
+        assert gone["import_status"] == "imported"
+        assert here["import_status"] == "pending"

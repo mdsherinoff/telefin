@@ -110,3 +110,50 @@ class TestSettingsEndpoint:
 
         assert res.status_code == 200
         assert "WEB_PORT='9000'" in env_path.read_text()
+
+
+class FakeQueue:
+    def __init__(self):
+        self.paused = False
+
+    def state(self):
+        return {"paused": self.paused, "in_window": True}
+
+    def pause(self):
+        self.paused = True
+
+    def resume(self):
+        self.paused = False
+
+
+class TestQueueEndpoints:
+    def test_pause_and_resume(self):
+        app = create_app(make_config(), database=None, bus=EventBus(), queue=FakeQueue())
+        client = TestClient(app)
+
+        assert client.post("/api/queue/pause").json()["paused"] is True
+        assert client.get("/api/queue").json()["paused"] is True
+        assert client.post("/api/queue/resume").json()["paused"] is False
+
+    def test_requires_auth_when_configured(self):
+        config = make_config(web_username="u", web_password="p")
+        client = TestClient(create_app(config, None, EventBus(), FakeQueue()))
+
+        assert client.post("/api/queue/pause").status_code == 401
+        assert client.post("/api/queue/pause", auth=("u", "p")).status_code == 200
+
+
+class TestWindowSettingValidation:
+    def test_rejects_bad_time(self, tmp_path, monkeypatch):
+        client, _ = make_client(tmp_path, monkeypatch)
+
+        res = client.post("/api/settings", json={"DOWNLOAD_WINDOW_START": "7pm"})
+
+        assert res.status_code == 400
+
+    def test_accepts_good_time(self, tmp_path, monkeypatch):
+        client, _ = make_client(tmp_path, monkeypatch)
+
+        res = client.post("/api/settings", json={"DOWNLOAD_WINDOW_START": "01:00"})
+
+        assert res.status_code == 200

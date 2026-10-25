@@ -1,9 +1,11 @@
 import asyncio
+import itertools
 import logging
 import os
 import shutil
 import time
 from dataclasses import dataclass
+from datetime import datetime
 
 from telethon.errors import FloodWaitError
 
@@ -11,7 +13,9 @@ import db
 from config import Config
 from db import Database
 from events import EventBus
+from utils.arr_status import fetch_imported_paths
 from utils.radarr import trigger_radarr_scan
+from utils.schedule import in_window
 from utils.sonarr import trigger_sonarr_scan
 from utils.telegram_helpers import (
     format_size,
@@ -20,6 +24,11 @@ from utils.telegram_helpers import (
 )
 
 logger = logging.getLogger(__name__)
+
+# How often to re-check whether the queue was resumed / the download window
+# opened, and how often to look for completed imports.
+GATE_POLL_SECONDS = 30
+IMPORT_CHECK_SECONDS = 120
 
 
 class DownloadCancelled(Exception):
@@ -54,7 +63,15 @@ class DownloadQueue:
         self.bus = bus
         self.config = config
 
-        self._queue: asyncio.Queue[Job] = asyncio.Queue()
+        # Entries are (rank, seq, job): promoted jobs (rank 0) run before
+        # normal ones (rank 1); seq keeps FIFO order within a rank.
+        self._queue: asyncio.PriorityQueue = asyncio.PriorityQueue()
+        self._seq = itertools.count()
+        self._pending_jobs: dict[int, Job] = {}
+        self._paused = False
+        self._resume_event = asyncio.Event()
+        self._resume_event.set()
+        self._import_task: asyncio.Task | None = None
         self._workers: list[asyncio.Task] = []
         self._cancel_requested: set[int] = set()
         self._notify_task: asyncio.Task | None = None
@@ -77,6 +94,8 @@ class DownloadQueue:
                 self.config.notify_interval_minutes,
             )
 
+        self._import_task = asyncio.create_task(self._run_import_checker())
+
         if self.config.retention_days > 0:
             self._retention_task = asyncio.create_task(self._run_periodic_retention())
             logger.info(
@@ -94,9 +113,78 @@ class DownloadQueue:
         if self._retention_task:
             self._retention_task.cancel()
 
+        if self._import_task:
+            self._import_task.cancel()
+
     async def enqueue(self, job: Job) -> None:
-        await self._queue.put(job)
+        self._put(job)
         await self._publish(job.download_id, "queued")
+
+    def _put(self, job: Job, promoted: bool = False) -> None:
+        self._pending_jobs[job.download_id] = job
+        self._queue.put_nowait((0 if promoted else 1, next(self._seq), job))
+
+    # pause / schedule
+    @property
+    def paused(self) -> bool:
+        return self._paused
+
+    def pause(self) -> None:
+        # Only gates *starting* jobs; a download already in flight finishes.
+        self._paused = True
+        self._resume_event.clear()
+        self._broadcast_state()
+
+    def resume(self) -> None:
+        self._paused = False
+        self._resume_event.set()
+        self._broadcast_state()
+
+    def in_download_window(self) -> bool:
+        return in_window(
+            datetime.now().time(),
+            self.config.download_window_start,
+            self.config.download_window_end,
+        )
+
+    def state(self) -> dict:
+        return {
+            "paused": self._paused,
+            "in_window": self.in_download_window(),
+            "window_start": self.config.download_window_start,
+            "window_end": self.config.download_window_end,
+            "speed_limit_kbps": self.config.max_download_speed_kbps,
+        }
+
+    def _broadcast_state(self) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        loop.create_task(self.bus.publish({"type": "queue", **self.state()}))
+
+    async def _wait_until_allowed(self) -> None:
+        while self._paused or not self.in_download_window():
+            if self._paused:
+                await self._resume_event.wait()
+            else:
+                await asyncio.sleep(GATE_POLL_SECONDS)
+
+    async def promote(self, download_id: int) -> bool:
+        # Moves a queued download to the front. The original queue entry is
+        # left in place and skipped later by _process, which only runs jobs
+        # that are still STATUS_QUEUED.
+        record = await self.db.get_download(download_id)
+
+        if not record or record["status"] != db.STATUS_QUEUED:
+            return False
+
+        await self.db.promote_download(download_id)
+        job = self._pending_jobs.get(download_id) or Job(download_id)
+        self._put(job, promoted=True)
+        await self._publish(download_id, "queued")
+        return True
 
     def cancel(self, download_id: int) -> None:
         # Interrupts an in-flight download_media() call by having the
@@ -149,7 +237,9 @@ class DownloadQueue:
             )
 
         arr_result = await self._trigger_arr(record["media_type"], dest_path)
-        await self.db.update_download(download_id, arr_result=arr_result)
+        await self.db.update_download(
+            download_id, arr_result=arr_result, import_status="pending"
+        )
         await self._publish(download_id, "completed")
         return arr_result
 
@@ -172,7 +262,9 @@ class DownloadQueue:
         records = await self.db.list_downloads(status=db.STATUS_COMPLETED, limit=1000)
         pending = [
             r for r in records
-            if r["dest_path"] and os.path.exists(r["dest_path"])
+            if r["dest_path"]
+            and os.path.exists(r["dest_path"])
+            and r.get("import_status") != "imported"
         ]
 
         if not pending:
@@ -188,10 +280,58 @@ class DownloadQueue:
                 arr_result = await self._trigger_arr(
                     record["media_type"], record["dest_path"]
                 )
-                await self.db.update_download(record["id"], arr_result=arr_result)
+                await self.db.update_download(
+                    record["id"], arr_result=arr_result, import_status="pending"
+                )
                 await self._publish(record["id"], "completed")
             except Exception as e:
                 logger.warning("Re-notify failed for %s: %s", record["id"], e)
+
+    async def _run_import_checker(self) -> None:
+        while True:
+            try:
+                await asyncio.sleep(IMPORT_CHECK_SECONDS)
+                await self._check_imports()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Import status sweep failed")
+
+    async def _check_imports(self) -> None:
+        # A completed download is "imported" once Sonarr/Radarr report it in
+        # their history (covers copy/hardlink imports that leave the file in
+        # place) or the file has left dest_path (a plain move).
+        records = await self.db.list_downloads(status=db.STATUS_COMPLETED, limit=1000)
+        waiting = [r for r in records if r.get("import_status") != "imported"]
+
+        if not waiting:
+            return
+
+        history: dict[str, set[str] | None] = {}
+
+        for record in waiting:
+            media_type = record["media_type"]
+
+            if media_type not in history:
+                if media_type == "tv":
+                    url, key = self.config.sonarr_url, self.config.sonarr_api_key
+                else:
+                    url, key = self.config.radarr_url, self.config.radarr_api_key
+
+                history[media_type] = await fetch_imported_paths(url, key)
+
+            imported_paths = history[media_type]
+            dest_path = record["dest_path"]
+            imported = (
+                (imported_paths is not None and dest_path in imported_paths)
+                or not dest_path
+                or not os.path.exists(dest_path)
+            )
+            new_status = "imported" if imported else "pending"
+
+            if new_status != record.get("import_status"):
+                await self.db.update_download(record["id"], import_status=new_status)
+                await self._publish(record["id"], "completed")
 
     async def _run_periodic_retention(self) -> None:
         while True:
@@ -212,7 +352,11 @@ class DownloadQueue:
     # worker loop
     async def _run_worker(self, index: int) -> None:
         while True:
-            job = await self._queue.get()
+            await self._wait_until_allowed()
+            _, _, job = await self._queue.get()
+
+            if self._pending_jobs.get(job.download_id) is job:
+                del self._pending_jobs[job.download_id]
 
             try:
                 await self._process(job)
@@ -265,7 +409,7 @@ class DownloadQueue:
         )
 
         await asyncio.sleep(delay)
-        await self._queue.put(next_job)
+        self._put(next_job)
 
     async def _retry_after_flood_wait(self, job: Job, error: FloodWaitError) -> None:
         # Telegram tells us exactly how long to back off; this doesn't
@@ -290,7 +434,7 @@ class DownloadQueue:
         )
 
         await asyncio.sleep(delay)
-        await self._queue.put(job)
+        self._put(job)
 
     async def _process(self, job: Job) -> None:
         record = await self.db.get_download(job.download_id)
@@ -363,6 +507,7 @@ class DownloadQueue:
             record["id"],
             status=db.STATUS_COMPLETED,
             arr_result=arr_result,
+            import_status="pending",
             completed_at=_now_iso(),
         )
         await self._publish(record["id"], "completed")
@@ -427,6 +572,13 @@ class DownloadQueue:
     ) -> None:
         if record["id"] in self._cancel_requested:
             raise DownloadCancelled(f"Download {record['id']} cancelled")
+
+        delay = tracker.throttle_delay(
+            current, self.config.max_download_speed_kbps * 1024
+        )
+
+        if delay > 0:
+            await asyncio.sleep(delay)
 
         if not tracker.should_update(current):
             return
@@ -510,6 +662,17 @@ class _ProgressTracker:
         self._last_time = time.monotonic()
         self._last_bytes = 0
         self._speed = 0.0
+        self._started = self._last_time
+
+    def throttle_delay(self, current: int, limit_bytes_per_sec: int) -> float:
+        # Seconds to sleep so the average rate since this download began
+        # stays at or below the limit. 0 means unlimited. Applied per
+        # download, so total bandwidth is limit * concurrent downloads.
+        if limit_bytes_per_sec <= 0:
+            return 0.0
+
+        elapsed = time.monotonic() - self._started
+        return max(0.0, current / limit_bytes_per_sec - elapsed)
 
     def should_update(self, current: int) -> bool:
         now = time.monotonic()
