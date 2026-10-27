@@ -234,3 +234,16 @@ class TestUpdateEndpoints:
         res = client.post("/api/updates/install", json={"version": "v0.6.0"}, **kw)
 
         assert res.status_code == 409
+
+
+class TestStaticCaching:
+    def test_static_files_must_revalidate(self):
+        client = TestClient(create_app(make_config(), None, EventBus(), None))
+
+        for path in ("/", "/static/app.js"):
+            assert client.get(path).headers["cache-control"] == "no-cache"
+
+    def test_api_responses_are_untouched(self):
+        client = TestClient(create_app(make_config(), None, EventBus(), None))
+
+        assert "cache-control" not in client.get("/api/health").headers

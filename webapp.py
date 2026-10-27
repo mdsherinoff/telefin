@@ -137,6 +137,19 @@ def create_app(
             and secrets.compare_digest(password, config.web_password)
         )
 
+    @app.middleware("http")
+    async def revalidate_static_files(request, call_next):
+        # StaticFiles sends ETag/Last-Modified but no Cache-Control, so
+        # browsers cache app.js heuristically and keep running the old
+        # script after an update. no-cache makes them revalidate each time
+        # (a cheap 304 when nothing changed).
+        response = await call_next(request)
+
+        if request.url.path.startswith("/static/") or request.url.path == "/":
+            response.headers["Cache-Control"] = "no-cache"
+
+        return response
+
     # pages
     @app.get("/")
     async def index(_: None = Depends(check_auth)) -> FileResponse:
