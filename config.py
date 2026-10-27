@@ -128,6 +128,9 @@ class Config:
     download_window_end: str | None = None
     max_download_speed_kbps: int = 0
 
+    # Ask GitHub for new releases (shown on the dashboard's Updates page).
+    update_check: bool = True
+
     @classmethod
     def from_env(cls) -> "Config":
         raw_extensions = os.getenv("ALLOWED_EXTENSIONS", "")
@@ -165,6 +168,7 @@ class Config:
             download_window_start=_get_time("DOWNLOAD_WINDOW_START"),
             download_window_end=_get_time("DOWNLOAD_WINDOW_END"),
             max_download_speed_kbps=max(0, _get_int("MAX_DOWNLOAD_SPEED_KBPS", 0)),
+            update_check=_get_bool("UPDATE_CHECK", True),
         )
 
     def download_dir_for(self, media_type: str) -> str:

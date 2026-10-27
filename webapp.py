@@ -25,7 +25,9 @@ import db
 from config import ENV_PATH, Config
 from db import Database
 from events import EventBus
+from utils import updater
 from utils.schedule import parse_hhmm
+from version import get_version
 from worker import DownloadQueue, Job
 
 logger = logging.getLogger(__name__)
@@ -43,7 +45,7 @@ SETTINGS_KEYS = {
     "MAX_DOWNLOAD_RETRIES", "RETRY_BACKOFF_SECONDS", "ALLOWED_EXTENSIONS",
     "DB_PATH", "NOTIFY_INTERVAL_MINUTES", "RETENTION_DAYS",
     "WEB_ENABLED", "WEB_HOST", "WEB_PORT", "WEB_USERNAME", "WEB_PASSWORD",
-    "DOWNLOAD_WINDOW_START", "DOWNLOAD_WINDOW_END", "MAX_DOWNLOAD_SPEED_KBPS",
+    "UPDATE_CHECK", "DOWNLOAD_WINDOW_START", "DOWNLOAD_WINDOW_END", "MAX_DOWNLOAD_SPEED_KBPS",
     "LOG_LEVEL", "LOG_FILE", "LOG_MAX_BYTES", "LOG_BACKUP_COUNT",
 }
 
@@ -173,6 +175,7 @@ def create_app(
             "sonarr_configured": bool(config.sonarr_url and config.sonarr_api_key),
             "radarr_configured": bool(config.radarr_url and config.radarr_api_key),
             "auth_enabled": bool(config.web_username and config.web_password),
+            "version": get_version(),
         }
 
     @app.get("/api/settings")
@@ -270,6 +273,68 @@ def create_app(
             )
 
         return {"ok": True}
+
+    @app.get("/api/updates")
+    async def get_updates(
+        _: None = Depends(check_auth),
+        refresh: bool = Query(False),
+    ) -> dict:
+        if not config.update_check:
+            return {
+                "current": get_version(), "current_known": True,
+                "method": updater.install_method(),
+                "check_ok": False, "latest": None, "update_available": False,
+                "releases": [], "check_disabled": True,
+                "can_install": False,
+            }
+
+        status = await updater.get_status(force=refresh)
+        status["check_disabled"] = False
+        # Installing runs git/pip on the host and restarts the process, so
+        # it is only offered when the dashboard is behind a login.
+        status["can_install"] = (
+            status["method"] == "git"
+            and bool(config.web_username and config.web_password)
+        )
+        return status
+
+    @app.post("/api/updates/install")
+    async def install_update(
+        _: None = Depends(check_auth),
+        payload: dict = Body(...),
+    ) -> dict:
+        if not (config.web_username and config.web_password):
+            raise HTTPException(
+                status_code=403,
+                detail="Set WEB_USERNAME and WEB_PASSWORD before installing "
+                       "updates from the dashboard",
+            )
+
+        status = await updater.get_status()
+        version = str(payload.get("version", ""))
+
+        if status["method"] != "git":
+            raise HTTPException(
+                status_code=409, detail="This install can't update itself"
+            )
+
+        if version not in {r["version"] for r in status["releases"]}:
+            raise HTTPException(status_code=400, detail="Unknown release")
+
+        if await database.list_downloads(active=True, limit=1):
+            raise HTTPException(
+                status_code=409,
+                detail="Finish or cancel active downloads before updating "
+                       "(a restart would interrupt them)",
+            )
+
+        try:
+            await updater.install(version)
+        except updater.UpdateError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+        asyncio.get_running_loop().call_later(1.0, updater.restart)
+        return {"ok": True, "restarting": True, "version": version}
 
     @app.get("/api/queue")
     async def queue_state(_: None = Depends(check_auth)) -> dict:

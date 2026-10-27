@@ -9,3 +9,4 @@ __pycache__/
 config/
 .DS_Store
 .claude/
+VERSION

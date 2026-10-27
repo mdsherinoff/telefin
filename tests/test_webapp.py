@@ -157,3 +157,80 @@ class TestWindowSettingValidation:
         res = client.post("/api/settings", json={"DOWNLOAD_WINDOW_START": "01:00"})
 
         assert res.status_code == 200
+
+
+class FakeDb:
+    def __init__(self, active=False):
+        self.active = active
+
+    async def list_downloads(self, **_):
+        return [{"id": 1}] if self.active else []
+
+
+def _update_client(monkeypatch, *, auth=True, method="git", active=False, installs=None):
+    from utils import updater
+
+    status = {
+        "current": "v0.5.0", "current_known": True, "method": method,
+        "check_ok": True, "latest": "v0.6.0", "update_available": True,
+        "releases": [{"version": "v0.6.0"}],
+    }
+
+    async def fake_status(force=False):
+        return dict(status)
+
+    async def fake_install(tag):
+        if installs is not None:
+            installs.append(tag)
+
+    monkeypatch.setattr(updater, "get_status", fake_status)
+    monkeypatch.setattr(updater, "install", fake_install)
+    monkeypatch.setattr(updater, "restart", lambda: None)
+
+    config = make_config(
+        web_username="u" if auth else None, web_password="p" if auth else None
+    )
+    app = create_app(config, FakeDb(active), EventBus(), FakeQueue())
+    return TestClient(app), ({"auth": ("u", "p")} if auth else {})
+
+
+class TestUpdateEndpoints:
+    def test_install_offered_only_with_login_on_git_install(self, monkeypatch):
+        client, kw = _update_client(monkeypatch)
+        assert client.get("/api/updates", **kw).json()["can_install"] is True
+
+        client, kw = _update_client(monkeypatch, auth=False)
+        assert client.get("/api/updates").json()["can_install"] is False
+
+        client, kw = _update_client(monkeypatch, method="docker")
+        assert client.get("/api/updates", **kw).json()["can_install"] is False
+
+    def test_install_runs_and_restarts(self, monkeypatch):
+        installs = []
+        client, kw = _update_client(monkeypatch, installs=installs)
+
+        res = client.post("/api/updates/install", json={"version": "v0.6.0"}, **kw)
+
+        assert res.status_code == 200
+        assert installs == ["v0.6.0"]
+
+    def test_install_refused_without_login(self, monkeypatch):
+        client, _ = _update_client(monkeypatch, auth=False)
+
+        res = client.post("/api/updates/install", json={"version": "v0.6.0"})
+
+        assert res.status_code == 403
+
+    def test_install_refused_for_unknown_version(self, monkeypatch):
+        client, kw = _update_client(monkeypatch)
+
+        res = client.post("/api/updates/install", json={"version": "v9.9.9"}, **kw)
+
+        assert res.status_code == 400
+
+    def test_install_refused_while_downloading(self, monkeypatch):
+        client, kw = _update_client(monkeypatch, active=True)
+
+        res = client.post("/api/updates/install", json={"version": "v0.6.0"}, **kw)
+
+        assert res.status_code == 409

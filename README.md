@@ -32,6 +32,7 @@ So, this project uses a **userbot**; a script that logs into your personal Teleg
 - **Pause / resume and priority** — pause the queue from the dashboard, or move a queued item to the top
 - **Download window and speed limit** — only start downloads during set hours (e.g. overnight) and cap bandwidth per download
 - **Import status** — completed downloads show *Imported* or *Awaiting import*, confirmed against Sonarr/Radarr's history
+- **Updates page** (System → Updates) — current version, release notes and an update badge; one-click install for git/systemd installs, copy-paste command for Docker
 - Restricts downloads to allowed Telegram user IDs
 - Auto-detects media type and triggers:
   - Sonarr for TV shows (`S01E01` / `1x01` naming)
@@ -131,6 +132,17 @@ docker compose up -d
 Dashboard: `http://YOUR_SERVER_IP:8420`. Logs: `docker compose logs -f`.
 
 To update after pulling changes: `docker compose up -d --build`.
+
+The dashboard's **Updates** page shows when a new release is out. For the
+Docker Hub image, run `docker compose pull && docker compose up -d`. (A
+container can't safely replace itself, so Docker installs update this way.)
+Local `build: .` images report their version as `dev` and can't be compared.
+
+On a bare-metal install the Updates page has an **Install** button: it checks
+out the release tag, installs requirements and restarts, rolling back if
+anything fails. It's only offered when `WEB_USERNAME`/`WEB_PASSWORD` are set,
+and it waits until no downloads are active. Set `UPDATE_CHECK=false` to stop
+TeleFin contacting GitHub.
 
 > Prefer a bare-metal / systemd install instead? Skip this section and follow
 > the manual steps below.

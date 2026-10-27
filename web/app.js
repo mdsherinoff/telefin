@@ -64,6 +64,7 @@ const SETTINGS_SCHEMA = [
   { key: "DOWNLOAD_WINDOW_START", label: "Download Window Start", type: "text", group: "advanced", help: "HH:MM (24h). Only start downloads between start and end, e.g. 01:00. Blank = any time." },
   { key: "DOWNLOAD_WINDOW_END", label: "Download Window End", type: "text", group: "advanced", help: "HH:MM (24h), e.g. 07:00. A window may cross midnight (22:00 → 06:00)." },
   { key: "MAX_DOWNLOAD_SPEED_KBPS", label: "Max Download Speed (KB/s)", type: "text", group: "advanced", help: "Per download. 0 = unlimited." },
+  { key: "UPDATE_CHECK", label: "Check for Updates", type: "checkbox", group: "advanced", help: "Ask GitHub for new releases (Updates page)" },
   { key: "RETENTION_DAYS", label: "History Retention (days)", type: "text", group: "advanced", help: "Auto-delete finished history older than this. 0 disables." },
   { key: "WEB_ENABLED", label: "Web Dashboard Enabled", type: "checkbox", group: "advanced" },
   { key: "WEB_HOST", label: "Web Host", type: "text", group: "advanced" },
@@ -573,8 +574,134 @@ async function saveSettings() {
 function showView(view) {
   el("queue-view").hidden = view !== "queue";
   el("settings-view").hidden = view !== "settings";
+  el("updates-view").hidden = view !== "updates";
+  el("nav-updates-group").classList.toggle("active", view === "updates");
   el("nav-activity-group").classList.toggle("active", view === "queue");
   el("nav-settings-group").classList.toggle("active", view === "settings");
+}
+
+// updates
+
+const UPDATE_COMMANDS = {
+  docker: "docker compose pull && docker compose up -d      (Docker Hub image)\ngit pull && docker compose up -d --build     (built locally)",
+  manual: "git pull   (or download the latest release) and restart TeleFin",
+};
+
+// Just enough markdown for release notes: headings, bullets, bold, italic,
+// inline code. Input is escaped first, so release text can't inject HTML.
+function renderMarkdown(src) {
+  const inline = (text) => escapeHtml(text)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+    .replace(/\*([^*]+)\*/g, "<i>$1</i>");
+
+  let html = "";
+  let inList = false;
+  for (const line of src.split(/\r?\n/)) {
+    const bullet = line.match(/^\s*[-*]\s+(.*)/);
+    if (bullet) {
+      if (!inList) html += "<ul>";
+      inList = true;
+      html += `<li>${inline(bullet[1])}</li>`;
+      continue;
+    }
+    if (inList) html += "</ul>";
+    inList = false;
+    const heading = line.match(/^#{1,6}\s+(.*)/);
+    if (heading) html += `<h4>${inline(heading[1])}</h4>`;
+    else if (line.trim()) html += `<p>${inline(line)}</p>`;
+  }
+  return html + (inList ? "</ul>" : "");
+}
+
+async function loadUpdates(refresh = false) {
+  const res = await fetch(`/api/updates${refresh ? "?refresh=true" : ""}`);
+  const u = await res.json();
+  state.updates = u;
+  el("count-updates").hidden = !u.update_available;
+  return u;
+}
+
+function renderUpdates(u) {
+  const status = u.check_disabled
+    ? "Update checks are turned off (Settings → Check for Updates)."
+    : !u.check_ok
+      ? "Could not reach GitHub to check for updates."
+      : !u.current_known
+        ? `Latest release: <b>${escapeHtml(u.latest || "unknown")}</b> (this is a local or development build, so it can't be compared).`
+        : u.update_available
+          ? `<b>Update available:</b> ${escapeHtml(u.latest)}`
+          : "You are running the latest version.";
+
+  el("update-summary").innerHTML =
+    `Current version: <b>${escapeHtml(u.current)}</b><br>${status}`;
+
+  const note = el("update-note");
+  const actions = el("update-actions");
+  actions.innerHTML = "";
+  note.hidden = true;
+
+  const check = document.createElement("button");
+  check.className = "toolbar-btn";
+  check.style.width = "auto";
+  check.textContent = "Check for updates";
+  check.onclick = () => openUpdates(true);
+  if (!u.check_disabled) actions.appendChild(check);
+
+  if (u.update_available) {
+    if (u.can_install) {
+      const install = document.createElement("button");
+      install.className = "btn-primary";
+      install.textContent = `Install ${u.latest}`;
+      install.onclick = () => installUpdate(u.latest);
+      actions.appendChild(install);
+    } else if (u.method === "docker" || u.method === "manual") {
+      note.hidden = false;
+      note.innerHTML =
+        "Update with:" +
+        `<code class="update-code">${escapeHtml(UPDATE_COMMANDS[u.method])}</code>`;
+    } else {
+      note.hidden = false;
+      note.textContent =
+        "Set a web username and password in Settings to enable installing updates from the dashboard.";
+    }
+  }
+
+  el("update-releases").innerHTML = u.releases.map((r) => `
+    <div class="release">
+      <div class="release-head">
+        <a href="${escapeHtml(r.url || "#")}" target="_blank" rel="noopener">${escapeHtml(r.version)}</a>
+        ${r.version === u.current ? `<span class="tag tag-imported">Current</span>` : ""}
+        <span class="release-date">${r.date ? formatDate(r.date) : ""}</span>
+      </div>
+      ${r.body ? `<div class="release-body">${renderMarkdown(r.body)}</div>` : ""}
+    </div>`).join("");
+}
+
+async function openUpdates(refresh = false) {
+  showView("updates");
+  try {
+    renderUpdates(await loadUpdates(refresh));
+  } catch {
+    toast("Could not load update info", "error");
+  }
+}
+
+async function installUpdate(version) {
+  if (!confirm(`Install ${version} and restart TeleFin now? The dashboard will be unavailable for a few seconds.`)) return;
+  try {
+    const res = await fetch("/api/updates/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.detail || "Update failed");
+    toast(`Installed ${version} — restarting…`);
+    setTimeout(() => location.reload(), 8000);
+  } catch (e) {
+    toast(e.message, "error");
+  }
 }
 
 // data
@@ -806,6 +933,8 @@ el("nav-parent").onclick = () => {
   document.querySelector('.nav-child[data-filter="active"]').click();
 };
 
+el("nav-updates").onclick = () => openUpdates();
+
 el("nav-settings").onclick = () => {
   showView("settings");
   loadSettings();
@@ -847,6 +976,8 @@ document.querySelectorAll(".pager-btn").forEach((btn) => {
 
 refresh();
 connect();
+loadUpdates().catch(() => {});
+setInterval(() => loadUpdates().catch(() => {}), 6 * 3600 * 1000);
 setInterval(loadStats, 15000);
 setInterval(() => loadQueueState().catch(() => {}), 60000);
 setInterval(render, 30000);
