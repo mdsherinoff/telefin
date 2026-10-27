@@ -11,6 +11,15 @@ const state = {
 
 const el = (id) => document.getElementById(id);
 
+// An expired session (or a changed password) shows up as a 401 on any API
+// call; send the browser to the login page instead of failing silently.
+const rawFetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  const res = await rawFetch(...args);
+  if (res.status === 401) location.href = "/login";
+  return res;
+};
+
 // Font Awesome Free solid-style glyphs (CC BY 4.0) -- matches Sonarr's own
 // icon set (Helpers/Props/icons.ts) rather than an unrelated stroke style.
 const fa = (viewBox, path, size = 16) =>
@@ -454,6 +463,7 @@ function renderDisks(disks) {
 async function loadConfig() {
   const res = await fetch("/api/config");
   const c = await res.json();
+  el("btn-signout").hidden = !c.auth_enabled;
   el("foot-config").textContent =
     `${c.download_dir}  •  ${c.max_concurrent_downloads} concurrent  •  ` +
     `Sonarr ${c.sonarr_configured ? "✓" : "✗"}  •  ` +
@@ -663,7 +673,7 @@ function renderUpdates(u) {
     } else {
       note.hidden = false;
       note.textContent =
-        "Set a web username and password in Settings to enable installing updates from the dashboard.";
+        "Installing from the dashboard needs a web username and password. Set them in Settings, then restart TeleFin (settings only apply at startup).";
     }
   }
 
@@ -934,6 +944,11 @@ el("nav-parent").onclick = () => {
 };
 
 el("nav-updates").onclick = () => openUpdates();
+
+el("btn-signout").onclick = async () => {
+  await fetch("/api/logout", { method: "POST" });
+  location.href = "/login";
+};
 
 el("nav-settings").onclick = () => {
   showView("settings");

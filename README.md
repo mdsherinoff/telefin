@@ -32,6 +32,7 @@ So, this project uses a **userbot**; a script that logs into your personal Teleg
 - **Pause / resume and priority** — pause the queue from the dashboard, or move a queued item to the top
 - **Download window and speed limit** — only start downloads during set hours (e.g. overnight) and cap bandwidth per download
 - **Import status** — completed downloads show *Imported* or *Awaiting import*, confirmed against Sonarr/Radarr's history
+- **Login page** — set `WEB_USERNAME`/`WEB_PASSWORD` for a Sonarr-style sign-in with a session cookie, Sign out button and lockout after repeated failed attempts
 - **Updates page** (System → Updates) — current version, release notes and an update badge; one-click install for git/systemd installs, copy-paste command for Docker
 - Restricts downloads to allowed Telegram user IDs
 - Auto-detects media type and triggers:

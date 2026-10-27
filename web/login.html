@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TeleFin - Sign in</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20512%20512%22%3E%3Cpath%20fill%3D%22%2335c5f4%22%20d%3D%22M476%203.2L12.5%20270.6c-18.1%2010.4-15.8%2035.6%202.2%2043.2L121%20358.4l287.3-253.2c5.5-4.9%2013.3%202.6%208.6%208.3L176%20407v80.5c0%2023.6%2028.5%2032.9%2042.5%2015.8L282%20426l124.6%2052.2c14.2%206%2030.4-2.9%2033-18.2l72-432C515%207.8%20493.3-6.8%20476%203.2z%22/%3E%3C/svg%3E" />
+</head>
+<body class="login-body">
+  <form class="login-card" id="login-form" autocomplete="on">
+    <div class="login-logo">
+      <svg viewBox="0 0 512 512" width="44" height="44" fill="currentColor"><path d="M476 3.2L12.5 270.6c-18.1 10.4-15.8 35.6 2.2 43.2L121 358.4l287.3-253.2c5.5-4.9 13.3 2.6 8.6 8.3L176 407v80.5c0 23.6 28.5 32.9 42.5 15.8L282 426l124.6 52.2c14.2 6 30.4-2.9 33-18.2l72-432C515 7.8 493.3-6.8 476 3.2z"/></svg>
+      <span>TeleFin</span>
+    </div>
+
+    <label class="login-field">
+      <input type="text" id="username" name="username" placeholder="Username" autocomplete="username" autofocus required />
+    </label>
+    <label class="login-field">
+      <input type="password" id="password" name="password" placeholder="Password" autocomplete="current-password" required />
+    </label>
+
+    <div class="login-error" id="login-error" role="alert" hidden></div>
+
+    <button class="btn-primary login-submit" id="login-submit" type="submit">Sign in</button>
+  </form>
+
+  <script>
+    const form = document.getElementById("login-form");
+    const errorBox = document.getElementById("login-error");
+    const submit = document.getElementById("login-submit");
+
+    function showError(text) {
+      errorBox.textContent = text;
+      errorBox.hidden = false;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      errorBox.hidden = true;
+      submit.disabled = true;
+
+      try {
+        const res = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: document.getElementById("username").value,
+            password: document.getElementById("password").value,
+          }),
+        });
+
+        if (res.ok) {
+          location.href = "/";
+          return;
+        }
+
+        if (res.status === 429) {
+          const wait = parseInt(res.headers.get("Retry-After") || "0", 10);
+          const minutes = Math.max(1, Math.ceil(wait / 60));
+          showError(`Too many failed attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`);
+        } else {
+          showError("Invalid username or password.");
+          document.getElementById("password").value = "";
+          document.getElementById("password").focus();
+        }
+      } catch {
+        showError("Could not reach the server.");
+      } finally {
+        submit.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -3,7 +3,6 @@ import base64
 import logging
 import os
 import re
-import secrets
 import shutil
 from pathlib import Path
 
@@ -14,11 +13,11 @@ from fastapi import (
     FastAPI,
     HTTPException,
     Query,
+    Request,
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import FileResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 import db
@@ -26,6 +25,15 @@ from config import ENV_PATH, Config
 from db import Database
 from events import EventBus
 from utils import updater
+from utils.auth import (
+    SESSION_COOKIE,
+    SESSION_SECONDS,
+    LoginLimiter,
+    credentials_match,
+    make_token,
+    session_secret,
+    verify_token,
+)
 from utils.schedule import parse_hhmm
 from version import get_version
 from worker import DownloadQueue, Job
@@ -94,47 +102,89 @@ def create_app(
     queue: DownloadQueue,
 ) -> FastAPI:
     app = FastAPI(title="TeleFin", docs_url=None, redoc_url=None)
-    security = HTTPBasic(auto_error=False)
+    limiter = LoginLimiter()
+    auth_enabled = bool(config.web_username and config.web_password)
+    secret = (
+        session_secret(config.web_username, config.web_password)
+        if auth_enabled else b""
+    )
 
-    def check_auth(
-        credentials: HTTPBasicCredentials | None = Depends(security),
-    ) -> None:
-        # No-op when no web credentials are configured (LAN-only use).
-        if not config.web_username or not config.web_password:
-            return
-
-        valid = (
-            credentials is not None
-            and secrets.compare_digest(credentials.username, config.web_username)
-            and secrets.compare_digest(credentials.password, config.web_password)
-        )
-
-        if not valid:
-            raise HTTPException(
-                status_code=401,
-                detail="Unauthorized",
-                headers={"WWW-Authenticate": "Basic"},
-            )
-
-    def ws_authorized(websocket: WebSocket) -> bool:
-        # Browsers reuse the page's HTTP Basic credentials on the WebSocket
-        # handshake, so checking the Authorization header keeps the dashboard
-        # JS free of any token plumbing. No query-param fallback: a password
-        # in the URL ends up in browser history, proxy logs, and referrers.
-        header = websocket.headers.get("authorization", "")
+    def basic_credentials(headers) -> tuple[str, str] | None:
+        # HTTP Basic stays supported for scripts and API clients; the
+        # dashboard itself signs in through the login page and a cookie.
+        header = headers.get("authorization", "")
 
         if not header.lower().startswith("basic "):
-            return False
+            return None
 
         try:
             decoded = base64.b64decode(header[6:]).decode()
         except Exception:
-            return False
+            return None
 
         username, _, password = decoded.partition(":")
-        return (
-            secrets.compare_digest(username, config.web_username)
-            and secrets.compare_digest(password, config.web_password)
+        return username, password
+
+    def has_session(cookies) -> bool:
+        return verify_token(secret, cookies.get(SESSION_COOKIE))
+
+    def client_key(request: Request) -> str:
+        return request.client.host if request.client else "unknown"
+
+    def is_authenticated(request: Request) -> bool:
+        if not auth_enabled:
+            return True
+
+        if has_session(request.cookies):
+            return True
+
+        creds = basic_credentials(request.headers)
+        return bool(creds) and credentials_match(
+            *creds, config.web_username, config.web_password
+        )
+
+    def check_auth(request: Request) -> None:
+        # No-op when no web credentials are configured (LAN-only use).
+        if not auth_enabled or has_session(request.cookies):
+            return
+
+        creds = basic_credentials(request.headers)
+
+        if creds:
+            # Wrong Basic credentials count toward the same lockout as the
+            # login form, so the API can't be used to bypass it.
+            key = client_key(request)
+            wait = limiter.retry_after(key)
+
+            if wait:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Too many failed attempts",
+                    headers={"Retry-After": str(wait)},
+                )
+
+            if credentials_match(
+                *creds, config.web_username, config.web_password
+            ):
+                limiter.reset(key)
+                return
+
+            limiter.record_failure(key)
+
+        # No WWW-Authenticate header: that would make browsers pop up their
+        # own sign-in box instead of letting the dashboard redirect to /login.
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    def ws_authorized(websocket: WebSocket) -> bool:
+        # Browsers send the session cookie on the same-origin WebSocket
+        # handshake. No query-param fallback: a password in the URL ends up
+        # in browser history, proxy logs, and referrers.
+        if has_session(websocket.cookies):
+            return True
+
+        creds = basic_credentials(websocket.headers)
+        return bool(creds) and credentials_match(
+            *creds, config.web_username, config.web_password
         )
 
     @app.middleware("http")
@@ -152,8 +202,64 @@ def create_app(
 
     # pages
     @app.get("/")
-    async def index(_: None = Depends(check_auth)) -> FileResponse:
+    async def index(request: Request):
+        if not is_authenticated(request):
+            return RedirectResponse("/login", status_code=302)
+
         return FileResponse(WEB_DIR / "index.html")
+
+    @app.get("/login")
+    async def login_page(request: Request):
+        if is_authenticated(request):
+            return RedirectResponse("/", status_code=302)
+
+        return FileResponse(WEB_DIR / "login.html")
+
+    @app.post("/api/login")
+    async def login(request: Request, payload: dict = Body(...)) -> JSONResponse:
+        if not auth_enabled:
+            return JSONResponse({"ok": True})
+
+        key = client_key(request)
+        wait = limiter.retry_after(key)
+
+        if wait:
+            return JSONResponse(
+                {"detail": "Too many failed attempts"},
+                status_code=429,
+                headers={"Retry-After": str(wait)},
+            )
+
+        if not credentials_match(
+            str(payload.get("username", "")),
+            str(payload.get("password", "")),
+            config.web_username,
+            config.web_password,
+        ):
+            limiter.record_failure(key)
+            logger.warning("Failed dashboard login from %s", key)
+            return JSONResponse({"detail": "Invalid username or password"}, status_code=401)
+
+        limiter.reset(key)
+        response = JSONResponse({"ok": True})
+        response.set_cookie(
+            SESSION_COOKIE,
+            make_token(secret),
+            max_age=SESSION_SECONDS,
+            httponly=True,
+            samesite="lax",
+            secure=(
+                request.url.scheme == "https"
+                or request.headers.get("x-forwarded-proto") == "https"
+            ),
+        )
+        return response
+
+    @app.post("/api/logout")
+    async def logout() -> JSONResponse:
+        response = JSONResponse({"ok": True})
+        response.delete_cookie(SESSION_COOKIE)
+        return response
 
     @app.get("/api/health")
     async def health() -> dict:
